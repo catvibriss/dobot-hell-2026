@@ -1,4 +1,5 @@
-import DobotDllType as dType
+from dobot_api import DobotDllType as dType 
+from config import *
 
 def init_robot(port_name, is_rail=False):
     print(f"connecting [{port_name}]")
@@ -22,36 +23,16 @@ def init_robot(port_name, is_rail=False):
 
     return api
 
-# setup ==
-RAIL_ROBOT = init_robot("COM0", is_rail=True)
-BASE_ROBOT = init_robot("COM0")
-HELP_ROBOT = init_robot("COM0")
+# robots
+RAIL_ROBOT = init_robot("COM8", is_rail=True)
+BASE_ROBOT = init_robot("COM4")
+HELP_ROBOT = init_robot("COM5")
 
-# box -
+# boxes
 BLUE_BOX = [False, False, False, False]
 RED_BOX = [False, False, False, False] 
 GREEN_BOX = [False, False, False, False] 
 YELLOW_BOX = [False, False, False, False] 
-
-BLUE_BOX_LDPos = (0, 0)
-RED_BOX_LDPos = (0, 0)
-GREEN_BOX_LDPos = (0, 0)
-YELLOW_BOX_LDPos = (0, 0)
-
-BOX_X_OFFSET = 0
-BOX_Y_OFFSET = 0
-
-BOX_Z_PLACE = 0
-BOX_Z_MIN = 0
-
-# base - 
-BASE_LDPos = (0, 0)
-
-BASE_X_OFFSET = 0
-BASE_Y_OFFSET = BASE_X_OFFSET
-
-# other -
-REST_CIBE_POS = (0, 0)
 
 def cube_sort_pos(color: int):
     box = []

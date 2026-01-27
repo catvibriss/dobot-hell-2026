@@ -1,0 +1,19 @@
+DOBOT_DLL_RELATIVE_PATH = "./dobot_api/DobotDll.dll"
+
+BLUE_BOX_LDPos = (0, 0)
+RED_BOX_LDPos = (0, 0)
+GREEN_BOX_LDPos = (0, 0)
+YELLOW_BOX_LDPos = (0, 0)
+
+BOX_X_OFFSET = 0
+BOX_Y_OFFSET = 0
+
+BOX_Z_PLACE = 0
+BOX_Z_MIN = 0
+
+BASE_LDPos = (0, 0)
+
+BASE_X_OFFSET = 0
+BASE_Y_OFFSET = BASE_X_OFFSET
+
+REST_CIBE_POS = (0, 0)
