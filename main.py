@@ -24,9 +24,8 @@ def init_robot(port_name, is_rail=False):
     return api
 
 # robots
-RAIL_ROBOT = init_robot("COM8", is_rail=True)
 BASE_ROBOT = init_robot(BASE_ROBOT_COM)
-HELP_ROBOT = init_robot("COM5")
+HELP_ROBOT = init_robot("COM6")
 
 # boxes
 BLUE_BOX = [False, False, False, False]
@@ -35,25 +34,14 @@ GREEN_BOX = [False, False, False, False]
 YELLOW_BOX = [False, False, False, False] 
 
 def move_robot(api, has_rail=False, relative=False, **kwargs):
-    """
-    Moves the robot to a target position.
-    
-    Args:
-        api: The connected robot object.
-        has_rail (bool): Whether to use the rail command (L-axis).
-        relative (bool): If True, coordinates are added to the current position.
-        **kwargs: Target coordinates (x, y, z, r, l).
-    """
     pose = dType.GetPose(api)
-    
     if not pose:
         print("Error: Could not retrieve robot pose.")
-        return
+        return 0 # Return 0 on failure
 
     current_x, current_y, current_z, current_r = pose[0], pose[1], pose[2], pose[3]
     current_l = pose[7] if len(pose) > 7 else 0 
 
-    # target
     dx = kwargs.get('x', 0 if relative else current_x)
     dy = kwargs.get('y', 0 if relative else current_y)
     dz = kwargs.get('z', 0 if relative else current_z)
@@ -61,33 +49,66 @@ def move_robot(api, has_rail=False, relative=False, **kwargs):
     dl = kwargs.get('l', 0 if relative else current_l)
 
     if relative:
-        target_x = current_x + dx
-        target_y = current_y + dy
-        target_z = current_z + dz
-        target_r = current_r + dr
+        target_x, target_y, target_z, target_r = current_x+dx, current_y+dy, current_z+dz, current_r+dr
         target_l = current_l + dl
     else:
         target_x, target_y, target_z, target_r, target_l = dx, dy, dz, dr, dl
 
-    # execute 
     mode = dType.PTPMode.PTPMOVLXYZMode
-
+    
+    # Capture the Command Index (queuedCmdIndex) returned by the function
     if has_rail:
-        dType.SetPTPWithLCmd(api, mode, target_x, target_y, target_z, target_r, target_l, isQueued=1)
+        last_index = dType.SetPTPWithLCmd(api, mode, target_x, target_y, target_z, target_r, target_l, isQueued=1)[0]
     else:
-        dType.SetPTPCmd(api, mode, target_x, target_y, target_z, target_r, isQueued=1)
+        last_index = dType.SetPTPCmd(api, mode, target_x, target_y, target_z, target_r, isQueued=1)[0]
 
-# Move to approach position
-move_robot(BASE_ROBOT, x=200, y=0, z=100)
+    # Start executing immediately
+    dType.SetQueuedCmdStartExec(api)
+    
+    # Return the index so we can track it
+    return last_index
 
-# Move down to pick
-move_robot(BASE_ROBOT, z=-20, relative=True)
+import time
 
-# Move back up
-move_robot(BASE_ROBOT, z=20, relative=True)
+def wait_for_robot(api, target_index):
+    """
+    Blocks execution until the robot has finished the command with the given index.
+    """
+    if target_index == 0: return # Safety for failed moves
+    
+    while True:
+        # Get the index of the command the robot is currently processing
+        current_index = dType.GetQueuedCmdCurrentIndex(api)[0]
+        
+        # If current matches or exceeds target, the move is done
+        if current_index >= target_index:
+            break
+        
+        # Small sleep to prevent maxing out CPU while waiting
+        time.sleep(0.1)
 
-# Execute all queued commands
-dType.SetQueuedCmdStartExec(BASE_ROBOT)
+# --- ROBOT COMMANDS ---
+
+# --- BASE ROBOT SEQUENCE ---
+move_robot(BASE_ROBOT, x=200, y=0, z=50)
+move_robot(BASE_ROBOT, z=20, relative=False)
+# Capture the ID of the LAST move for Base Robot
+last_base_idx = move_robot(BASE_ROBOT, z=50, relative=True)
+
+# --- HELP ROBOT SEQUENCE ---
+move_robot(HELP_ROBOT, x=200, y=0, z=50)
+move_robot(HELP_ROBOT, z=20, relative=False)
+# Capture the ID of the LAST move for Help Robot
+last_help_idx = move_robot(HELP_ROBOT, z=50, relative=True)
+
+# --- IMPORTANT: KEEP SCRIPT ALIVE ---
+print("Waiting for robots to finish moving...")
+
+# The script will pause here until BASE_ROBOT finishes its last move
+wait_for_robot(BASE_ROBOT, last_base_idx)
+
+# Then it will ensure HELP_ROBOT is also finished
+wait_for_robot(HELP_ROBOT, last_help_idx)
 
 def cube_sort_pos(color: int):
     box = []
