@@ -25,7 +25,7 @@ def init_robot(port_name, is_rail=False):
 
 # robots
 RAIL_ROBOT = init_robot("COM8", is_rail=True)
-BASE_ROBOT = init_robot("COM4")
+BASE_ROBOT = init_robot(BASE_ROBOT_COM)
 HELP_ROBOT = init_robot("COM5")
 
 # boxes
@@ -33,6 +33,61 @@ BLUE_BOX = [False, False, False, False]
 RED_BOX = [False, False, False, False] 
 GREEN_BOX = [False, False, False, False] 
 YELLOW_BOX = [False, False, False, False] 
+
+def move_robot(api, has_rail=False, relative=False, **kwargs):
+    """
+    Moves the robot to a target position.
+    
+    Args:
+        api: The connected robot object.
+        has_rail (bool): Whether to use the rail command (L-axis).
+        relative (bool): If True, coordinates are added to the current position.
+        **kwargs: Target coordinates (x, y, z, r, l).
+    """
+    pose = dType.GetPose(api)
+    
+    if not pose:
+        print("Error: Could not retrieve robot pose.")
+        return
+
+    current_x, current_y, current_z, current_r = pose[0], pose[1], pose[2], pose[3]
+    current_l = pose[7] if len(pose) > 7 else 0 
+
+    # target
+    dx = kwargs.get('x', 0 if relative else current_x)
+    dy = kwargs.get('y', 0 if relative else current_y)
+    dz = kwargs.get('z', 0 if relative else current_z)
+    dr = kwargs.get('r', 0 if relative else current_r)
+    dl = kwargs.get('l', 0 if relative else current_l)
+
+    if relative:
+        target_x = current_x + dx
+        target_y = current_y + dy
+        target_z = current_z + dz
+        target_r = current_r + dr
+        target_l = current_l + dl
+    else:
+        target_x, target_y, target_z, target_r, target_l = dx, dy, dz, dr, dl
+
+    # execute 
+    mode = dType.PTPMode.PTPMOVLXYZMode
+
+    if has_rail:
+        dType.SetPTPWithLCmd(api, mode, target_x, target_y, target_z, target_r, target_l, isQueued=1)
+    else:
+        dType.SetPTPCmd(api, mode, target_x, target_y, target_z, target_r, isQueued=1)
+
+# Move to approach position
+move_robot(BASE_ROBOT, x=200, y=0, z=100)
+
+# Move down to pick
+move_robot(BASE_ROBOT, z=-20, relative=True)
+
+# Move back up
+move_robot(BASE_ROBOT, z=20, relative=True)
+
+# Execute all queued commands
+dType.SetQueuedCmdStartExec(BASE_ROBOT)
 
 def cube_sort_pos(color: int):
     box = []
