@@ -2,6 +2,7 @@ from dobot_dll import DobotDllType as dType
 from config import *
 import time
 from datetime import datetime
+from bleak import BleakClient
 
 class Dobot:
     def __init__(self, com_port: str, dll_path: str, dobot_name: str = "Dobot", has_rail: bool = False):
@@ -86,6 +87,10 @@ class Dobot:
         dType.DisconnectDobot(self._api)
 
 class DobotBLE:
+    SERVICE_UUID = "0003CDD0-0000-1000-8000-00805F9B0131"
+    WRITE_UUID   = "0003CDD2-0000-1000-8000-00805F9B0131"
+    READ_UUID    = "0003CDD1-0000-1000-8000-00805F9B0131"
+
     def __init__(self, dobot_mac, dobot_name, has_rail: bool = False):
         self._mac = dobot_mac
         self.name = dobot_name
@@ -99,14 +104,21 @@ class DobotBLE:
         print(f"[{time_now}] [{self.name}] {text}")
 
     def _connect_ble(self):
-        return
+        return 
 
-    def _send_command(self):
+    def _send_command(self, cmd, timeout = 2.0):
         return
     
-    def _build_command(self):
-        return
+    def _build_command(self, cmd_id, rw, is_queued, params: bytes = b""):
+        ctrl = rw | (is_queued << 1)
+        payload = bytes([cmd_id, ctrl]) + params
+        length = len(payload)
+        checksum = self._calculate_checksum(payload)
+        return bytes([0xAA, 0xAA, length]) + payload + bytes([checksum])
     
+    def _calculate_checksum(data):
+        return (256 - sum(data) % 256) % 256
+
     def current_pose(self):
         return
     
@@ -115,6 +127,3 @@ class DobotBLE:
     
     def homing(self):
         return
-    
-d = DobotBLE("asdads", "sadasdasd")
-d._log_print("fdsf")
