@@ -1,9 +1,10 @@
 from dobot_api import DobotDllType as dType 
 from config import *
 
-def init_robot(port_name, is_rail=False):
+def init_robot(port_name, is_rail=False, dll_file=DOBOT_DLL_RELATIVE_PATH):
+    print(dll_file)
     print(f"connecting [{port_name}]")
-    api = dType.load()
+    api = dType.load(dll_file)
 
     state = dType.ConnectDobot(api, port_name, 115200)
     if state[0] != dType.DobotConnect.DobotConnect_NoError:
@@ -24,8 +25,9 @@ def init_robot(port_name, is_rail=False):
     return api
 
 # robots
-BASE_ROBOT = init_robot(BASE_ROBOT_COM)
-HELP_ROBOT = init_robot("COM6")
+BASE_ROBOT = init_robot(BASE_ROBOT_COM, dll_file="./dobot_api/DobotDllBase.dll")
+HELP_ROBOT = init_robot("COM6", dll_file="./dobot_api/DobotDllHelp.dll")
+SORT_ROBOT = init_robot("")
 
 # boxes
 BLUE_BOX = [False, False, False, False]
@@ -58,15 +60,15 @@ def move_robot(api, has_rail=False, relative=False, **kwargs):
     
     # Capture the Command Index (queuedCmdIndex) returned by the function
     if has_rail:
-        last_index = dType.SetPTPWithLCmd(api, mode, target_x, target_y, target_z, target_r, target_l, isQueued=1)[0]
+        last_index = dType.SetPTPWithLCmd(api, mode, target_x, target_y, target_z, target_r, target_l, isQueued=0)[0]
     else:
-        last_index = dType.SetPTPCmd(api, mode, target_x, target_y, target_z, target_r, isQueued=1)[0]
+        last_index = dType.SetPTPCmd(api, mode, target_x, target_y, target_z, target_r, isQueued=0)[0]
 
     # Start executing immediately
-    dType.SetQueuedCmdStartExec(api)
+    # dType.SetQueuedCmdStartExec(api)
     
     # Return the index so we can track it
-    return last_index
+    # return last_index
 
 import time
 
@@ -90,25 +92,13 @@ def wait_for_robot(api, target_index):
 # --- ROBOT COMMANDS ---
 
 # --- BASE ROBOT SEQUENCE ---
+print(BASE_ROBOT == HELP_ROBOT)
 move_robot(BASE_ROBOT, x=200, y=0, z=50)
 move_robot(BASE_ROBOT, z=20, relative=False)
-# Capture the ID of the LAST move for Base Robot
-last_base_idx = move_robot(BASE_ROBOT, z=50, relative=True)
 
 # --- HELP ROBOT SEQUENCE ---
 move_robot(HELP_ROBOT, x=200, y=0, z=50)
 move_robot(HELP_ROBOT, z=20, relative=False)
-# Capture the ID of the LAST move for Help Robot
-last_help_idx = move_robot(HELP_ROBOT, z=50, relative=True)
-
-# --- IMPORTANT: KEEP SCRIPT ALIVE ---
-print("Waiting for robots to finish moving...")
-
-# The script will pause here until BASE_ROBOT finishes its last move
-wait_for_robot(BASE_ROBOT, last_base_idx)
-
-# Then it will ensure HELP_ROBOT is also finished
-wait_for_robot(HELP_ROBOT, last_help_idx)
 
 def cube_sort_pos(color: int):
     box = []

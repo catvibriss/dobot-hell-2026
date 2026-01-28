@@ -585,11 +585,12 @@ isUsingLinearRail = False
 #parker add 2018 8 29 添加Wifi设置模块退出标志位
 QuitDobotApiFlag = True
 
-def load():
+def load(dll_name=DOBOT_DLL_RELATIVE_PATH):
     if platform.system() == "Windows":
         print("您用的dll是64位，为了顺利运行，请保证您的python环境也是64位")
         print("python环境是：",platform.architecture())
-        return CDLL(DOBOT_DLL_RELATIVE_PATH,  RTLD_GLOBAL)
+        print("nigger:", dll_name)
+        return CDLL(dll_name,  RTLD_GLOBAL)
     elif platform.system() == "Darwin":
         return CDLL("./libDobotDll.dylib",  RTLD_GLOBAL)
     elif platform.system() == "Linux":
