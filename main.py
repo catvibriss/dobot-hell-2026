@@ -81,8 +81,8 @@ class Dobot:
     def control_motor(self, speed: int, motor_id: int):
         dType.SetEMotor(self._api, motor_id, 0 if speed == 0 else 1, int(speed), 0)
 
-    def get_motor_state(self, motor_id: int):
-        dType.GetMotorMode
+    def __del__(self):
+        dType.DisconnectDobot(self._api)
 
 class Conveyor:
     def __init__(self, owner: Dobot, motor_id: int = 0):
@@ -113,9 +113,9 @@ class Conveyor:
             self.owner.control_motor(speed=speed, motor_id=self._motor_id)        
 
 # robots
-BASE_ROBOT = Dobot(BASE_ROBOT_COM, dobot_name="Base", dll_file="./dobot_api/DobotDllBase.dll")
-HELP_ROBOT = Dobot(HELP_ROBOT_COM, dobot_name="Help", dll_file="./dobot_api/DobotDllHelp.dll")
-SORT_ROBOT = Dobot(SORT_ROBOT_COM, dobot_name="Sort", dll_file="./dobot_api/DobotDllSort.dll", has_rail=True)
+BASE_ROBOT = Dobot(BASE_ROBOT_COM, dobot_name="Base", dll_path="./dobot_api/DobotDllBase.dll")
+HELP_ROBOT = Dobot(HELP_ROBOT_COM, dobot_name="Help", dll_path="./dobot_api/DobotDllHelp.dll")
+SORT_ROBOT = Dobot(SORT_ROBOT_COM, dobot_name="Sort", dll_path="./dobot_api/DobotDllSort.dll", has_rail=True)
 
 CONV = Conveyor(BASE_ROBOT)
 
