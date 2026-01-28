@@ -1,5 +1,6 @@
 from dobot_api import DobotDllType as dType 
 from config import *
+import time
 
 def init_robot(port_name, is_rail=False, dll_file=DOBOT_DLL_RELATIVE_PATH):
     print(dll_file)
@@ -28,7 +29,7 @@ def init_robot(port_name, is_rail=False, dll_file=DOBOT_DLL_RELATIVE_PATH):
 BASE_ROBOT = init_robot(BASE_ROBOT_COM, dll_file="./dobot_api/DobotDllBase.dll")
 HELP_ROBOT = init_robot(HELP_ROBOT_COM, dll_file="./dobot_api/DobotDllHelp.dll")
 SORT_ROBOT = init_robot(SORT_ROBOT_COM, dll_file="./dobot_api/DobotDllSort.dll", is_rail=True)
-
+# dType.ClearAllAlarmsState(BASE_ROBOT)
 # boxes
 BLUE_BOX = [False, False, False, False]
 RED_BOX = [False, False, False, False] 
@@ -36,14 +37,16 @@ GREEN_BOX = [False, False, False, False]
 YELLOW_BOX = [False, False, False, False] 
 
 def move_robot(api, has_rail=False, relative=False, **kwargs):
+    # --- 1. GET CURRENT POSITION ---
     pose = dType.GetPose(api)
     if not pose:
         print("Error: Could not retrieve robot pose.")
-        return 0 # Return 0 on failure
+        return 0
 
     current_x, current_y, current_z, current_r = pose[0], pose[1], pose[2], pose[3]
     current_l = pose[7] if len(pose) > 7 else 0 
 
+    # --- 2. CALCULATE TARGETS ---
     dx = kwargs.get('x', 0 if relative else current_x)
     dy = kwargs.get('y', 0 if relative else current_y)
     dz = kwargs.get('z', 0 if relative else current_z)
@@ -56,38 +59,47 @@ def move_robot(api, has_rail=False, relative=False, **kwargs):
     else:
         target_x, target_y, target_z, target_r, target_l = dx, dy, dz, dr, dl
 
+    # --- 3. PRE-MOVE CLEANUP (The "Fresh Start" Logic) ---
+    # Stop any previous execution and wipe the queue so index starts at 0
+    dType.SetQueuedCmdStopExec(api)
+    dType.SetQueuedCmdClear(api)
+
+    # --- 4. SEND COMMAND ---
     mode = dType.PTPMode.PTPMOVLXYZMode
     
-    # Capture the Command Index (queuedCmdIndex) returned by the function
+    # We use isQueued=1 (Buffered) because it is more stable than Immediate mode,
+    # even though we are executing it right away.
     if has_rail:
-        last_index = dType.SetPTPWithLCmd(api, mode, target_x, target_y, target_z, target_r, target_l, isQueued=0)[0]
+        last_index = dType.SetPTPWithLCmd(api, mode, target_x, target_y, target_z, target_r, target_l, isQueued=1)[0]
     else:
-        last_index = dType.SetPTPCmd(api, mode, target_x, target_y, target_z, target_r, isQueued=0)[0]
+        last_index = dType.SetPTPCmd(api, mode, target_x, target_y, target_z, target_r, isQueued=1)[0]
 
-    # Start executing immediately
-    # dType.SetQueuedCmdStartExec(api)
-    
-    # Return the index so we can track it
-    # return last_index
+    # --- 5. EXECUTE AND WAIT ---
+    dType.SetQueuedCmdStartExec(api)
 
-import time
-
-def wait_for_robot(api, target_index):
-    """
-    Blocks execution until the robot has finished the command with the given index.
-    """
-    if target_index == 0: return # Safety for failed moves
-    
+    # Block Python until the robot catches up to the command index
     while True:
-        # Get the index of the command the robot is currently processing
-        current_index = dType.GetQueuedCmdCurrentIndex(api)[0]
-        
-        # If current matches or exceeds target, the move is done
-        if current_index >= target_index:
+        current_cmd_index = dType.GetQueuedCmdCurrentIndex(api)[0]
+        if current_cmd_index >= last_index:
             break
-        
-        # Small sleep to prevent maxing out CPU while waiting
-        time.sleep(0.1)
+        dType.dSleep(100) # Small pause to save CPU
+
+    # --- 6. POST-MOVE CLEANUP ---
+    # Stop execution immediately so the robot is "Safe" and "Idle"
+    dType.SetQueuedCmdStopExec(api)
+    dType.SetQueuedCmdClear(api)
+
+    return last_index
+
+def toggle_conveyor(api, enable=True, speed=5000):
+    """
+    Controls the conveyor belt connected to Stepper 1 (E1) immediately.
+    """
+    # 0 = Stepper 1
+    # 1/0 = Enable/Disable
+    # speed = Speed (steps/sec)
+    # isQueued = 0 (Execute Immediately)
+    dType.SetEMotor(api, 0, 1 if enable else 0, int(speed), 0)
 
 # --- ROBOT COMMANDS ---
 
@@ -107,15 +119,10 @@ def wait_for_robot(api, target_index):
 # dType.SetHOMECmd(HELP_ROBOT, 0, 0)
 # dType.SetHOMECmd(SORT_ROBOT, 0, 0)
 
-move_robot(SORT_ROBOT, has_rail=True, l=RED_BOX_LDPos)
-time.sleep(1)
-move_robot(SORT_ROBOT, has_rail=True, l=BLUE_BOX_LDPos)
-time.sleep(1)
-move_robot(SORT_ROBOT, has_rail=True, l=YELLOW_BOX_LDPos)
-time.sleep(1)
-move_robot(SORT_ROBOT, has_rail=True, l=GREEN_BOX_LDPos)
-time.sleep(1)
-
+# toggle_conveyor(BASE_ROBOT, speed=0)
+# time.sleep(3)
+# move_robot(BASE_ROBOT, x=CONV_BASE_3DPOS[0], y=CONV_BASE_3DPOS[1], z=CONV_BASE_3DPOS[2]+10)
+print(dType.GetAlarmsState(BASE_ROBOT))
 # TODO: rewrite
 def cube_sort_pos(color: int):
     box = []
