@@ -26,8 +26,8 @@ def init_robot(port_name, is_rail=False, dll_file=DOBOT_DLL_RELATIVE_PATH):
 
 # robots
 BASE_ROBOT = init_robot(BASE_ROBOT_COM, dll_file="./dobot_api/DobotDllBase.dll")
-HELP_ROBOT = init_robot("COM6", dll_file="./dobot_api/DobotDllHelp.dll")
-SORT_ROBOT = init_robot("")
+HELP_ROBOT = init_robot(HELP_ROBOT_COM, dll_file="./dobot_api/DobotDllHelp.dll")
+SORT_ROBOT = init_robot(SORT_ROBOT_COM, dll_file="./dobot_api/DobotDllSort.dll", is_rail=True)
 
 # boxes
 BLUE_BOX = [False, False, False, False]
@@ -92,14 +92,31 @@ def wait_for_robot(api, target_index):
 # --- ROBOT COMMANDS ---
 
 # --- BASE ROBOT SEQUENCE ---
-print(BASE_ROBOT == HELP_ROBOT)
-move_robot(BASE_ROBOT, x=200, y=0, z=50)
-move_robot(BASE_ROBOT, z=20, relative=False)
+# for _ in range(10):
+#     move_robot(BASE_ROBOT, x=200, y=0, z=50)
+#     move_robot(BASE_ROBOT, z=20, relative=False)
 
-# --- HELP ROBOT SEQUENCE ---
-move_robot(HELP_ROBOT, x=200, y=0, z=50)
-move_robot(HELP_ROBOT, z=20, relative=False)
+#     # --- HELP ROBOT SEQUENCE ---
+#     move_robot(HELP_ROBOT, x=200, y=0, z=50)
+#     move_robot(HELP_ROBOT, z=20, relative=False)
 
+#     move_robot(SORT_ROBOT, x=200, y=0, z=50)
+#     move_robot(SORT_ROBOT, z=20, relative=False, l=100)
+
+# dType.SetHOMECmd(BASE_ROBOT, 0, 0)
+# dType.SetHOMECmd(HELP_ROBOT, 0, 0)
+# dType.SetHOMECmd(SORT_ROBOT, 0, 0)
+
+move_robot(SORT_ROBOT, has_rail=True, l=RED_BOX_LDPos)
+time.sleep(1)
+move_robot(SORT_ROBOT, has_rail=True, l=BLUE_BOX_LDPos)
+time.sleep(1)
+move_robot(SORT_ROBOT, has_rail=True, l=YELLOW_BOX_LDPos)
+time.sleep(1)
+move_robot(SORT_ROBOT, has_rail=True, l=GREEN_BOX_LDPos)
+time.sleep(1)
+
+# TODO: rewrite
 def cube_sort_pos(color: int):
     box = []
     box_ldpos = []
