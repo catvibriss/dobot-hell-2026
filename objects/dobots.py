@@ -168,8 +168,19 @@ class DobotBLE:
 
     async def set_motor(self, index: int, speed: float, is_enabled: bool = True):
         self._log(f"Setting Motor {index}: Speed={speed}, Enabled={is_enabled}")
+        
+        await self._stop_and_clear_queue()
+        
         params = struct.pack('<BBf', index, int(is_enabled), speed)
-        await self._send_command(cmd_id=135, params=params, rw=1, is_queued=1)
+        resp = await self._send_command(cmd_id=135, params=params, rw=1, is_queued=0)
+        
+        last_index = 0
+        if resp:
+            last_index = struct.unpack('<Q', resp[:8])[0]
+
+        await self._start_queue()  
+        await self._wait_for_command(last_index)
+        await self._stop_and_clear_queue()
 
     async def get_motor(self):
         resp = await self._send_command(cmd_id=135, rw=0, is_queued=0)
