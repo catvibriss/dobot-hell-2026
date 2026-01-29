@@ -83,9 +83,6 @@ class Dobot:
     def motor(self, speed: int, motor_id: int):
         dType.SetEMotor(self._api, motor_id, 0 if speed == 0 else 1, int(speed), 0)
 
-    def __del__(self):
-        dType.DisconnectDobot(self._api)
-
 class DobotBLE:
     SERVICE_UUID = "0003CDD0-0000-1000-8000-00805F9B0131"
     WRITE_UUID   = "0003CDD2-0000-1000-8000-00805F9B0131"

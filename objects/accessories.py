@@ -14,18 +14,20 @@ class Conveyor:
         self._work_speed = -CONV_MOVING_SPEED
 
     def disable(self):
-        self.owner.control_motor(0, motor_id=self._motor_id)
+        self.owner.motor(0, motor_id=self._motor_id)
         self._last_motor_speed = 0
 
-    def enable(self, smooth: bool = True, reversed: bool = False):
+    def enable(self, smooth: bool = True, reversed: bool = False, conv_speed: int = None):
         speed = self._work_speed
         if reversed:
             speed = speed * -1
-
+        if conv_speed:
+            speed = conv_speed
+            
         if smooth:
             step = 100 if speed > self._last_motor_speed else -100
             for i in range(self._last_motor_speed, speed+1, step):
-                self.owner.control_motor(speed=i, motor_id=self._motor_id)  
+                self.owner.motor(speed=i, motor_id=self._motor_id)  
                 time.sleep(0.01)      
         else:
-            self.owner.control_motor(speed=speed, motor_id=self._motor_id)        
+            self.owner.motor(speed=speed, motor_id=self._motor_id)        
