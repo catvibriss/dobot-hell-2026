@@ -1,6 +1,7 @@
 from ctypes import *
 import time,  platform
 import os
+import math
 from config import DOBOT_DLL_RELATIVE_PATH
 
 def enum(**enums):

@@ -42,3 +42,10 @@ def cube_sort_pos(color: int):
     
     box[free_space_idx] = True
     return move_pos
+
+def reset_boxes():
+    global BLUE_BOX, RED_BOX, GREEN_BOX, YELLOW_BOX
+    BLUE_BOX = [False, False, False, False]
+    RED_BOX = [False, False, False, False] 
+    GREEN_BOX = [False, False, False, False] 
+    YELLOW_BOX = [False, False, False, False] 

@@ -1,13 +1,13 @@
 from config import *
-from objects.dobots import Dobot, DobotBLE
+from objects.dobots import DobotDLL, DobotBLE
 import asyncio
 from objects.accessories import Conveyor
 import time
 
 # robots
-BASE_ROBOT_DLL = Dobot(BASE_ROBOT_COM, dobot_name="Base", dll_path="./dobot_dll/DobotDllBase.dll")
-# HELP_ROBOT = Dobot(HELP_ROBOT_COM, dobot_name="Help", dll_path="./dobot_dll/DobotDllHelp.dll")
-# SORT_ROBOT = Dobot(SORT_ROBOT_COM, dobot_name="Sort", dll_path="./dobot_dll/DobotDllSort.dll", has_rail=True)
+BASE_ROBOT_DLL = DobotDLL(BASE_ROBOT_COM, dobot_name="Base", dll_path="./dobot_dll/DobotDllBase.dll")
+# HELP_ROBOT = DobotDLL(HELP_ROBOT_COM, dobot_name="Help", dll_path="./dobot_dll/DobotDllHelp.dll")
+# SORT_ROBOT = DobotDLL(SORT_ROBOT_COM, dobot_name="Sort", dll_path="./dobot_dll/DobotDllSort.dll", has_rail=True)
 
 # BASE_ROBOT = DobotBLE(BASE_DOBOT_BLE_MAC, "Base")
 HELP_ROBOT = DobotBLE(HELP_DOBOT_BLE_MAC, "Help")
@@ -16,7 +16,7 @@ SORT_ROBOT = DobotBLE(SORT_DOBOT_BLE_MAC, "Sort", has_rail=True)
 CONV = Conveyor(BASE_ROBOT_DLL)
 
 # CONV.disable()
-CONV.enable(conv_speed=-15000)
+CONV.enable(speed=-15000)
 
 async def main():
     return

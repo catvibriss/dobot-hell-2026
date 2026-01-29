@@ -1,9 +1,14 @@
-from objects.dobots import Dobot
+from objects.dobots import DobotDLL
+from objects.exceptions import *
 from config import *
 import time
 
 class Conveyor:
-    def __init__(self, owner: Dobot, motor_id: int = 0):
+    def __init__(self, owner: DobotDLL, motor_id: int = 0):
+        if not isinstance(owner, DobotDLL):
+            raise WrongDobotClass("you must use conveyor with DLL Dobot!")
+            return
+        
         self.owner = owner 
         self._motor_id = motor_id
 
@@ -14,20 +19,23 @@ class Conveyor:
         self._work_speed = -CONV_MOVING_SPEED
 
     def disable(self):
-        self.owner.motor(0, motor_id=self._motor_id)
+        self.owner.set_motor(0, motor_id=self._motor_id)
         self._last_motor_speed = 0
 
-    def enable(self, smooth: bool = True, reversed: bool = False, conv_speed: int = None):
-        speed = self._work_speed
+    def enable(self, smooth: bool = True, reversed: bool = False, speed: int = None):
+        conv_speed = self._work_speed
         if reversed:
-            speed = speed * -1
-        if conv_speed:
-            speed = conv_speed
+            conv_speed = conv_speed * -1
+        if speed:
+            if abs(speed) <= CONV_MOVING_SPEED:
+                conv_speed = speed
+            else:
+                conv_speed = CONV_POSSIBLE_MAX_SPEED
             
         if smooth:
-            step = 100 if speed > self._last_motor_speed else -100
-            for i in range(self._last_motor_speed, speed+1, step):
-                self.owner.motor(speed=i, motor_id=self._motor_id)  
+            step = 100 if conv_speed > self._last_motor_speed else -100
+            for i in range(self._last_motor_speed, conv_speed+1, step):
+                self.owner.set_motor(speed=i, motor_id=self._motor_id)  
                 time.sleep(0.01)      
         else:
-            self.owner.motor(speed=speed, motor_id=self._motor_id)        
+            self.owner.set_motor(speed=conv_speed, motor_id=self._motor_id)        

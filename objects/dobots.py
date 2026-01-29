@@ -1,14 +1,13 @@
 from dobot_dll import DobotDllType as dType
 from config import *
-import time
 from datetime import datetime
 from bleak import BleakClient
 import asyncio
 import struct
 
-class Dobot:
+class DobotDLL:
     def __init__(self, com_port: str, dll_path: str, dobot_name: str = "Dobot", has_rail: bool = False):
-        self._api = None
+        self.api = None
         self.name = dobot_name
 
         self._com_port = com_port
@@ -36,10 +35,17 @@ class Dobot:
             dType.SetPTPLParams(api, 200, 100)
             dType.SetDeviceWithL(api, 1, 1)
 
-        self._api = api
+        self.api = api
+
+    def _stop_and_clear_queue(self):
+        dType.SetQueuedCmdStopExec(self.api)
+        dType.SetQueuedCmdClear(self.api)
+
+    def _start_queue(self):
+        dType.SetQueuedCmdStartExec(self.api)
 
     def move(self, relative=False, **kwargs):
-        pose = dType.GetPose(self._api)
+        pose = dType.GetPose(self.api)
         if not pose:
             print("Error: Could not retrieve robot pose.")
             return 0
@@ -59,36 +65,36 @@ class Dobot:
         else:
             target_x, target_y, target_z, target_r, target_l = dx, dy, dz, dr, dl
 
-        dType.SetQueuedCmdStopExec(self._api)
-        dType.SetQueuedCmdClear(self._api)
-
+        self._stop_and_clear_queue()
         mode = dType.PTPMode.PTPMOVLXYZMode
 
         if self._has_rail:
-            last_index = dType.SetPTPWithLCmd(self._api, mode, target_x, target_y, target_z, target_r, target_l, isQueued=1)[0]
+            last_index = dType.SetPTPWithLCmd(self.api, mode, target_x, target_y, target_z, target_r, target_l, isQueued=1)[0]
         else:
-            last_index = dType.SetPTPCmd(self._api, mode, target_x, target_y, target_z, target_r, isQueued=1)[0]
+            last_index = dType.SetPTPCmd(self.api, mode, target_x, target_y, target_z, target_r, isQueued=1)[0]
 
-        dType.SetQueuedCmdStartExec(self._api)
+        self._start_queue()
 
         while True:
-            current_cmd_index = dType.GetQueuedCmdCurrentIndex(self._api)[0]
+            current_cmd_index = dType.GetQueuedCmdCurrentIndex(self.api)[0]
             if current_cmd_index >= last_index:
                 break
             dType.dSleep(100) 
 
-        dType.SetQueuedCmdStopExec(self._api)
-        dType.SetQueuedCmdClear(self._api)
-
-        return last_index
+        self._stop_and_clear_queue()
     
-    def motor(self, speed: int, motor_id: int):
-        dType.SetEMotor(self._api, motor_id, 0 if speed == 0 else 1, int(speed), 0)
+    def set_motor(self, speed: int, motor_id: int):
+        dType.SetEMotor(self.api, motor_id, 0 if speed == 0 else 1, int(speed), 0)
 
-import asyncio
-import struct
-from datetime import datetime
-from bleak import BleakClient
+    def homing(self):
+        dType.SetHOMECmdEx(self.api)
+
+    def current_pose(self):
+        response = dType.GetPose(self.api)
+        if self._has_rail:
+            response["l"] = dType.GetPoseL(self.api)
+
+        return response
 
 class DobotBLE:
     SERVICE_UUID = "0003CDD0-0000-1000-8000-00805F9B0131"
@@ -99,6 +105,7 @@ class DobotBLE:
         self._mac = dobot_mac
         self.name = dobot_name
         self._has_rail = has_rail
+
         self.client = None
         self._pending_future = None
         self._expected_cmd_id = None
