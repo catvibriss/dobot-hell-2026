@@ -8,7 +8,6 @@ class ColorSensor:
     def __init__(self, owner: DobotDLL):
         if not isinstance(owner, DobotDLL):
             raise WrongDobotClass("you must use conveyor with DLL Dobot!")
-            return
 
         self.owner = owner
 
@@ -38,7 +37,6 @@ class DistanceSensor:
     def __init__(self, owner: DobotDLL, port: int = 0, check_loop_pause: float = 0.05, cancel_loop: bool = False):
         if not isinstance(owner, DobotDLL):
             raise WrongDobotClass("you must use conveyor with DLL Dobot!")
-            return
         
         self.owner = owner
         self.port = port
@@ -48,7 +46,7 @@ class DistanceSensor:
         
         self._on_change_handlers = []
         self._thread = None
-        self._running = None
+        self._running = False
 
         if not cancel_loop:
             self.start_check()
@@ -64,7 +62,7 @@ class DistanceSensor:
         sensor = DistanceSensor(**params)
 
         @sensor.on_change
-        def hadler(value):
+        def handler(value):
         # do something
         ```
         '''
