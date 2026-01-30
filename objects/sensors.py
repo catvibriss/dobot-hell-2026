@@ -47,8 +47,8 @@ class DistanceSensor:
         self._last_value = 0
         
         self._on_change_handlers = []
-        self._check_thread = None
-        self._check_thread_flag = None
+        self._thread = None
+        self._running = None
 
         if not cancel_loop:
             self.start_check()
