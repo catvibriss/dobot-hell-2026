@@ -12,16 +12,18 @@ def cube_sort_pos(color: int):
     move_pos = []
 
     match color:
+        case -1:
+            return None
         case 0: # blue
             box = BLUE_BOX
             box_ldpos[0] = BLUE_BOX_LDPos
-        case 1: # red
+        case 3: # red
             box = RED_BOX
             box_ldpos[0] = RED_BOX_LDPos
-        case 2: # green
+        case 1: # green
             box = GREEN_BOX
             box_ldpos[0] = GREEN_BOX_LDPos
-        case 3: # yellow
+        case 2: # yellow
             box = YELLOW_BOX
             box_ldpos[0] = YELLOW_BOX_LDPos
     
