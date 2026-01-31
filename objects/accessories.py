@@ -22,7 +22,7 @@ class Conveyor:
         self.owner.set_motor(0, motor_id=self._motor_id)
         self._last_motor_speed = 0
 
-    def enable(self, smooth: bool = True, reversed: bool = False, speed: int = None):
+    def enable(self, smooth: bool = True, reversed: bool = False, speed: float = None):
         conv_speed = self._work_speed
         if reversed:
             conv_speed = conv_speed * -1
@@ -39,3 +39,6 @@ class Conveyor:
                 time.sleep(0.01)      
         else:
             self.owner.set_motor(speed=conv_speed, motor_id=self._motor_id)        
+
+    def set_speed(self, speed: float):
+        self.owner.set_motor(speed=speed, motor_id=self._motor_id)        

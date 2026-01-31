@@ -1,7 +1,8 @@
 from config import *
 from objects.dobots import DobotDLL, DobotBLE
 import asyncio
-from objects.accessories import Conveyor
+from objects.accessories import *
+from objects.sensors import *
 import time
 
 # robots
@@ -36,3 +37,9 @@ async def main():
     # await SORT_ROBOT.set_suction_cup(False)
 
 # asyncio.run(main())
+
+dist = DistanceSensor()
+
+@dist.on_change
+def hand():
+    return
