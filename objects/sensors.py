@@ -12,7 +12,7 @@ class ColorSensor:
         self.owner = owner
 
     def get_color(self):
-        rgb_color = dType.GetColorSensor(self.owner)
+        rgb_color = dType.GetColorSensor(self.owner.api)
         return rgb_color
 
     def classify_color(self):
@@ -52,7 +52,7 @@ class DistanceSensor:
             self.start_check()
 
     def get_distance(self):
-        value = dType.GetInfraredSensor(self.owner, self.port)
+        value = dType.GetInfraredSensor(self.owner.api, self.port)
         return value
     
     def on_change(self, func):

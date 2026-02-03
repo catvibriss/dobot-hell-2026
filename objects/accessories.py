@@ -41,4 +41,5 @@ class Conveyor:
             self.owner.set_motor(speed=conv_speed, motor_id=self._motor_id)        
 
     def set_speed(self, speed: float):
-        self.owner.set_motor(speed=speed, motor_id=self._motor_id)        
+        print(speed)
+        self.owner.set_motor(speed=-speed, motor_id=self._motor_id)        
