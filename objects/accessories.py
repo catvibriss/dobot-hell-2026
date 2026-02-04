@@ -26,12 +26,11 @@ class Conveyor:
         conv_speed = self._work_speed
         if reversed:
             conv_speed = conv_speed * -1
-        if speed:
-            if abs(speed) <= CONV_MOVING_SPEED:
-                conv_speed = speed
-            else:
-                conv_speed = CONV_POSSIBLE_MAX_SPEED
+        if speed != None:
+            conv_speed = speed
             
+        if conv_speed == 0:
+            self.disable()
         if smooth:
             step = 100 if conv_speed > self._last_motor_speed else -100
             for i in range(self._last_motor_speed, conv_speed+1, step):
@@ -39,6 +38,7 @@ class Conveyor:
                 time.sleep(0.01)      
         else:
             self.owner.set_motor(speed=conv_speed, motor_id=self._motor_id)        
+        print(f"speeded [{speed}]")
 
     def set_speed(self, speed: float):
         print(speed)
