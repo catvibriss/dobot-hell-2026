@@ -38,8 +38,6 @@ class Conveyor:
                 time.sleep(0.01)      
         else:
             self.owner.set_motor(speed=conv_speed, motor_id=self._motor_id)        
-        print(f"speeded [{speed}]")
 
     def set_speed(self, speed: float):
-        print(speed)
         self.owner.set_motor(speed=-speed, motor_id=self._motor_id)        

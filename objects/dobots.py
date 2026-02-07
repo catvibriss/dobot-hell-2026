@@ -16,6 +16,10 @@ class DobotDLL:
 
         self._init_dType()
 
+    def _log(self, text: str):
+        time_now = datetime.now().strftime("%H:%M:%S")
+        print(f"[{time_now}] [{self.name}] {text}")
+
     def _init_dType(self):
         api = dType.load(self._dll_path)
 
@@ -44,7 +48,42 @@ class DobotDLL:
     def _start_queue(self):
         dType.SetQueuedCmdStartExec(self.api)
 
-    def move(self, relative=False, **kwargs):
+    def set_motor(self, speed: int, motor_id: int):
+        dType.SetEMotor(self.api, motor_id, 0 if speed == 0 else 1, int(speed), 0)
+    
+    def get_motor(self):
+        return None # NOTE: а этого нету в dType лол
+
+    def set_suction_cup(self, active: bool):
+        dType.SetEndEffectorSuctionCup(self.api, 1, 1 if active else 0, 0)
+
+    def set_gripper(self, status: str):
+        enable_ctrl = 0
+        is_gripped = 0
+
+        if status in ["grip", "close"]:
+            enable_ctrl = 1
+            is_gripped = 1
+        elif status in ["release", "open"]:
+            enable_ctrl = 1
+            is_gripped = 0
+        elif status == "off":
+            enable_ctrl = 0
+            is_gripped = 0
+
+        dType.SetEndEffectorGripper(self.api, enable_ctrl, is_gripped, 0)
+
+    def current_pose(self):
+        response = dType.GetPose(self.api)
+        if self._has_rail:
+            response["l"] = dType.GetPoseL(self.api)
+
+        return response
+
+    def homing(self):
+        dType.SetHOMECmdEx(self.api)
+
+    def move(self, relative=False, jump=0, **kwargs):
         pose = dType.GetPose(self.api)
         if not pose:
             print("Error: Could not retrieve robot pose.")
@@ -82,26 +121,13 @@ class DobotDLL:
             dType.dSleep(100) 
 
         self._stop_and_clear_queue()
-    
-    def set_motor(self, speed: int, motor_id: int):
-        dType.SetEMotor(self.api, motor_id, 0 if speed == 0 else 1, int(speed), 0)
-
-    def homing(self):
-        dType.SetHOMECmdEx(self.api)
-
-    def current_pose(self):
-        response = dType.GetPose(self.api)
-        if self._has_rail:
-            response["l"] = dType.GetPoseL(self.api)
-
-        return response
 
 class DobotBLE:
     SERVICE_UUID = "0003CDD0-0000-1000-8000-00805F9B0131"
     WRITE_UUID   = "0003CDD2-0000-1000-8000-00805F9B0131"
     READ_UUID    = "0003CDD1-0000-1000-8000-00805F9B0131"
 
-    def __init__(self, dobot_mac, dobot_name, has_rail: bool = False):
+    def __init__(self, dobot_mac: str, dobot_name: str, has_rail: bool = False):
         self._mac = dobot_mac
         self.name = dobot_name
         self._has_rail = has_rail
@@ -113,26 +139,6 @@ class DobotBLE:
     def _log(self, text: str):
         time_now = datetime.now().strftime("%H:%M:%S")
         print(f"[{time_now}] [{self.name}] {text}")
-
-    async def connect(self):
-        self._log(f"Connecting to {self._mac}...")
-        try:
-            self.client = BleakClient(self._mac)
-            await self.client.connect()
-            await self.client.start_notify(self.READ_UUID, self._notification_handler)
-            
-            await self._dobot_setup()
-            
-            self._log("Connected and Setup Complete.")
-            return True
-        except Exception as e:
-            self._log(f"Connection failed: {e}")
-            return False
-
-    async def disconnect(self):
-        if self.client and self.client.is_connected:
-            await self.client.disconnect()
-            self._log("Disconnected.")
 
     async def _dobot_setup(self):
         self._log("Running Setup...")
@@ -155,6 +161,26 @@ class DobotBLE:
             params_enable_rail = struct.pack('<BB', 1, 1)
             await self._send_command(cmd_id=3, params=params_enable_rail, rw=1, is_queued=0)
 
+    async def connect(self):
+        self._log(f"Connecting to {self._mac}...")
+        try:
+            self.client = BleakClient(self._mac)
+            await self.client.connect()
+            await self.client.start_notify(self.READ_UUID, self._notification_handler)
+            
+            await self._dobot_setup()
+            
+            self._log("Connected and Setup Complete.")
+            return True
+        except Exception as e:
+            self._log(f"Connection failed: {e}")
+            return False
+
+    async def disconnect(self):
+        if self.client and self.client.is_connected:
+            await self.client.disconnect()
+            self._log("Disconnected.")
+
     async def _stop_and_clear_queue(self):
         await self._send_command(cmd_id=241, rw=1, is_queued=0)
         await self._send_command(cmd_id=245, rw=1, is_queued=0)
@@ -172,6 +198,49 @@ class DobotBLE:
                     break
             await asyncio.sleep(0.1)
         self._log("Command execution finished.")
+
+    def _notification_handler(self, sender, data: bytearray):
+        if len(data) < 5 or data[0] != 0xAA or data[1] != 0xAA:
+            return
+
+        payload_len = data[2]
+        cmd_id = data[3]
+        payload = data[3 : 3 + payload_len]
+        
+        if self._calculate_checksum(payload) != data[3 + payload_len]:
+            self._log(f"Checksum Error on ID {cmd_id}")
+            return
+
+        params = data[5 : 3 + payload_len]
+
+        if self._pending_future and not self._pending_future.done():
+            if self._expected_cmd_id == cmd_id:
+                self._pending_future.set_result(params)
+
+    def _calculate_checksum(self, payload):
+        return (256 - sum(payload) % 256) % 256
+
+    async def _send_command(self, cmd_id, params=b"", rw=1, is_queued=0, timeout=3.0):
+        if not self.client or not self.client.is_connected:
+            self._log("Not connected.")
+            return None
+
+        ctrl = rw | (is_queued << 1)
+        payload = bytes([cmd_id, ctrl]) + params
+        packet = bytes([0xAA, 0xAA, len(payload)]) + payload + bytes([self._calculate_checksum(payload)])
+
+        self._expected_cmd_id = cmd_id
+        self._pending_future = asyncio.Future()
+
+        try:
+            await self.client.write_gatt_char(self.WRITE_UUID, packet)
+            return await asyncio.wait_for(self._pending_future, timeout)
+        except asyncio.TimeoutError:
+            self._log(f"Timeout waiting for response to ID {cmd_id}")
+            return None
+        finally:
+            self._pending_future = None
+            self._expected_cmd_id = None
 
     async def set_motor(self, index: int, speed: float, is_enabled: bool = True):
         self._log(f"Setting Motor {index}: Speed={speed}, Enabled={is_enabled}")
@@ -312,46 +381,3 @@ class DobotBLE:
         await self._start_queue()
         await self._wait_for_command(last_index)
         await self._stop_and_clear_queue()
-
-    def _notification_handler(self, sender, data: bytearray):
-        if len(data) < 5 or data[0] != 0xAA or data[1] != 0xAA:
-            return
-
-        payload_len = data[2]
-        cmd_id = data[3]
-        payload = data[3 : 3 + payload_len]
-        
-        if self._calculate_checksum(payload) != data[3 + payload_len]:
-            self._log(f"Checksum Error on ID {cmd_id}")
-            return
-
-        params = data[5 : 3 + payload_len]
-
-        if self._pending_future and not self._pending_future.done():
-            if self._expected_cmd_id == cmd_id:
-                self._pending_future.set_result(params)
-
-    def _calculate_checksum(self, payload):
-        return (256 - sum(payload) % 256) % 256
-
-    async def _send_command(self, cmd_id, params=b"", rw=1, is_queued=0, timeout=3.0):
-        if not self.client or not self.client.is_connected:
-            self._log("Not connected.")
-            return None
-
-        ctrl = rw | (is_queued << 1)
-        payload = bytes([cmd_id, ctrl]) + params
-        packet = bytes([0xAA, 0xAA, len(payload)]) + payload + bytes([self._calculate_checksum(payload)])
-
-        self._expected_cmd_id = cmd_id
-        self._pending_future = asyncio.Future()
-
-        try:
-            await self.client.write_gatt_char(self.WRITE_UUID, packet)
-            return await asyncio.wait_for(self._pending_future, timeout)
-        except asyncio.TimeoutError:
-            self._log(f"Timeout waiting for response to ID {cmd_id}")
-            return None
-        finally:
-            self._pending_future = None
-            self._expected_cmd_id = None

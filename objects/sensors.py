@@ -48,9 +48,6 @@ class DistanceSensor:
         self._thread = None
         self._running = False
 
-        if not cancel_loop:
-            self.start_check()
-
     def get_distance(self):
         value = dType.GetInfraredSensor(self.owner.api, self.port)
         return value
