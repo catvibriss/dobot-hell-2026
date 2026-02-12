@@ -1,43 +1,49 @@
+from dobot_dll import DobotDllType as dType
 from objects.dobots import DobotDLL
 from objects.exceptions import *
 from config import *
+import math
 import time
 
 class Conveyor:
-    def __init__(self, owner: DobotDLL, motor_id: int = 0):
+    def __init__(self, owner: DobotDLL, m_index: int = 0):
         if not isinstance(owner, DobotDLL):
-            raise WrongDobotClass("you must use conveyor with DLL Dobot!")
+            raise WrongDobotClass("you must use DLL Dobot!")
             return
         
         self.owner = owner 
-        self._motor_id = motor_id
+        self.m_index = m_index
 
-        self._last_motor_speed = None
+        self._last_freq = 0
         self.disable()
 
-        self._max_speed = CONV_MAX_SPEED
-        self._work_speed = -CONV_MOVING_SPEED
+    def _log(self, text: str):
+        self.owner._log(f"[CV] {text}")
+
+    def start_work(self):
+        self.set_freq(freq=-CONV_WORK_FREQ, smooth=True)
 
     def disable(self):
-        self.owner.set_motor(0, motor_id=self._motor_id)
-        self._last_motor_speed = 0
+        dType.SetEMotor(self.api, self.m_index, 0, 0, 0)
 
-    def enable(self, smooth: bool = True, reversed: bool = False, speed: float = None):
-        conv_speed = self._work_speed
-        if reversed:
-            conv_speed = conv_speed * -1
-        if speed != None:
-            conv_speed = speed
+    def set_freq(self, freq: int, smooth: bool = False):
+        """
+        speed by direct freq
+        """
+        if abs(freq) > CONV_POSSIBLE_MAX_FREQ:
+            sign = lambda x: (x > 0) - (x < 0)
+            freq = CONV_POSSIBLE_MAX_FREQ * sign(freq)
             
-        if conv_speed == 0:
-            self.disable()
-        if smooth:
-            step = 100 if conv_speed > self._last_motor_speed else -100
-            for i in range(self._last_motor_speed, conv_speed+1, step):
-                self.owner.set_motor(speed=i, motor_id=self._motor_id)  
-                time.sleep(0.01)      
-        else:
-            self.owner.set_motor(speed=conv_speed, motor_id=self._motor_id)        
+        if not smooth:
+            dType.SetEMotor(self.api, self.m_index, 1, freq, 0)
 
-    def set_speed(self, speed: float):
-        self.owner.set_motor(speed=-speed, motor_id=self._motor_id)        
+        self._last_freq = freq
+
+    def set_speed(self, speed: float, smooth: bool = False):
+        """
+        speed by mm/s
+        """
+        sPc = 360 / 1.8 * 10 * 16
+        mPc = math.pi * 36
+        freq = speed * sPc / mPc
+        self.set_freq(int(freq), smooth)
