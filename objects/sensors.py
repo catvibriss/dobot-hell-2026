@@ -5,87 +5,113 @@ import threading
 import time
 
 class ColorSensor:
-    def __init__(self, owner: DobotDLL):
+    def __init__(self, owner: DobotDLL, port: int = 1, version: int = 0):
         if not isinstance(owner, DobotDLL):
-            raise WrongDobotClass("you must use conveyor with DLL Dobot!")
+            raise WrongDobotClass("you must use DLL Dobot!")
 
-        self.owner = owner
-
-    def get_color(self):
-        rgb_color = dType.GetColorSensor(self.owner.api)
-        return rgb_color
-
-    def classify_color(self):
-        rgb = self.get_color()
-        
-        is_r = rgb[0] in range(200, 255)
-        is_g = rgb[1] in range(200, 255)
-        is_b = rgb[2] in range(200, 255)
-
-        if not is_r and not is_g and not is_b:
-            return -1
-        if is_r and not is_g and not is_b:
-            return 3
-        if is_r and is_g and not is_b:
-            return 2
-        if not is_r and is_g and not is_b:
-            return 1
-        if not is_r and not is_g and is_b:
-            return 0
-            
-class DistanceSensor:
-    def __init__(self, owner: DobotDLL, port: int = 0, check_loop_pause: float = 0.05, cancel_loop: bool = False):
-        if not isinstance(owner, DobotDLL):
-            raise WrongDobotClass("you must use conveyor with DLL Dobot!")
-        
         self.owner = owner
         self.port = port
-        
-        self._check_loop_pause = check_loop_pause
-        self._last_value = 0
-        
-        self._on_change_handlers = []
+        self.version = version
+
+        self._enabled = False
+
+    def _log(self, text: str):
+        self.owner._log(f"[CS] {text}")
+
+    def enable(self):
+        self._log("enabled")
+        dType.SetColorSensor(self.owner.api, 1, self.port, self.version)
+        self._enabled = True
+
+    def disable(self):
+        self._log("disabled")
+        dType.SetColorSensor(self.owner.api, 0, self.port, self.version)
+        self._enabled = False
+
+    def current_color(self, force: bool = False):
+        rgb = None
+        if not self._enabled:
+            if force:
+                self._log("forced measure")
+                self.enable()
+                rgb = dType.GetColorSensor(self.owner.api)
+                self.disable()
+        else:
+            rgb = dType.GetColorSensor(self.owner.api)
+        return rgb
+
+class ObstacleSensor:
+    def __init__(self, owner: DobotDLL, port: int = 1, version: int = 0):
+        if not isinstance(owner, DobotDLL):
+            raise WrongDobotClass("you must use DLL Dobot!")
+
+        self.owner = owner
+        self.port = port
+        self.version = version
+
+        self._enabled = False
+
+        self._loop_handlers = []
+        self._last_state = 0
         self._thread = None
-        self._running = False
+        self._thread_is_running = False
 
-    def get_distance(self):
-        value = dType.GetInfraredSensor(self.owner.api, self.port)
-        return value
-    
-    def on_change(self, func):
-        '''
-        Usage example:
-        ```
-        sensor = DistanceSensor(**params)
+        self._start_loop()
 
-        @sensor.on_change
-        def handler(value):
-        # do something
-        ```
-        '''
-        self._on_change_handlers.append(func)
+    def _log(self, text: str):
+        self.owner._log(f"[OS] {text}")
 
-    def start_check(self):
-        if self._running:
-            return
-        self._running = True
-        self._thread = threading.Thread(target=self._loop, daemon=True)
-        self._thread.start()
-    
-    def stop_check(self):
-        self._running = False
-        if self._thread:
-            self._thread.join(timeout=1.0)
-    
+    def on_obstacle(self, func):
+        self._loop_handlers.append(func)
+
+    def _loop_trigger(self):
+        self._log("obstacle loop triggered")
+        for func in self._loop_handlers[:]:
+            func()
+
     def _loop(self):
-        while self._running:
-            current = self.get_distance()
-            if current != self._last_value:
-                self._last_value = current
-                self._trigger(current)
-            time.sleep(self._check_loop_pause)
-    
-    def _trigger(self, value):
-        for handler in self._on_change_handlers:  
-            handler(value)
-    
+        while self._thread_is_running:
+            current = self.state()
+            if current != self._last_state:
+                if current == 1 and self._last_state == 0:
+                    self._loop_trigger()
+                self._last_state = current
+            time.sleep(0.01)
+
+    def _start_loop(self):
+        if self._thread_is_running:
+            return
+
+        self._thread_is_running = True
+        self._thread = threading.Thread(target=self._loop)
+        self._thread.start()
+        
+    def _stop_loop(self):
+        if not self._thread_is_running:
+            return
+        
+        self._thread_is_running = False
+        if self._thread is not None:
+            self._thread.join()
+
+    def enable(self):
+        self._log("enabled")
+        dType.SetInfraredSensor(self.owner.api, 1, self.port, self.version)
+        self._enabled = True
+
+    def disable(self):
+        self._log("disabled")
+        dType.SetInfraredSensor(self.owner.api, 0, self.port, self.version)
+        self._enabled = False
+
+    def state(self, force: bool = False):
+        current_state = None
+        if not self._enabled:
+            if force:
+                self._log("forced state")
+                self.enable()
+                current_state = dType.GetInfraredSensor(self.owner.api, self.port)[0]        
+                self.disable()
+        else:
+            current_state = dType.GetInfraredSensor(self.owner.api, self.port)[0]        
+        return current_state
