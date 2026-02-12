@@ -1,10 +1,30 @@
 from config import *
+from main import BASE_ROBOT, SORT_ROBOT, HELP_ROBOT, CONV, DIST_SENSOR
+from time import sleep
 
 # boxes
 BLUE_BOX = [False, False, False, False]
 RED_BOX = [False, False, False, False] 
 GREEN_BOX = [False, False, False, False] 
 YELLOW_BOX = [False, False, False, False] 
+
+work_queue = []
+
+def start_sorting():
+    count_of_cubes = int(input())
+    for x in range(count_of_cubes, 0, -1):
+        r = (x-1)//4
+        c = (x-1)%4
+        cpos = [BASE_LDPos[0] + BASE_X_OFFSET * c, BASE_LDPos[1] + BASE_Y_OFFSET * r]  
+        BASE_ROBOT.move(x=cpos[0], y=cpos[1], z=BASE_CUBE_Z+2)
+        BASE_ROBOT.set_suction_cup(True)
+        BASE_ROBOT.move(relative=True, z=-3)
+        BASE_ROBOT.move(z=25)
+        BASE_ROBOT.move(x=CONV_BASE_3DPOS[0], y=CONV_BASE_3DPOS[1], z=CONV_BASE_3DPOS[2])
+        BASE_ROBOT.set_suction_cup(False)
+        sleep(0.1)
+        BASE_ROBOT.move(relative=True, z=5)
+        sleep(1)
 
 def cube_sort_pos(color: int):
     box = []
@@ -51,3 +71,7 @@ def reset_boxes():
     RED_BOX = [False, False, False, False] 
     GREEN_BOX = [False, False, False, False] 
     YELLOW_BOX = [False, False, False, False] 
+
+@DIST_SENSOR.on_change
+def on_new_cube(value):
+    print(value)
