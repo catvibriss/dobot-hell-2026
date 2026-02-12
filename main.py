@@ -6,11 +6,10 @@ from objects.sensors import *
 from utils import sorting
 
 # robots
-BASE_ROBOT = DobotDLL(BASE_ROBOT_COM, dobot_name="Base", dll_path="./dobot_dll/DobotDllBase.dll")
-HELP_ROBOT = DobotBLE(HELP_DOBOT_BLE_MAC, "Help")
-SORT_ROBOT = DobotBLE(SORT_DOBOT_BLE_MAC, "Sort", has_rail=True)
+BASE_DOBOT = DobotDLL(BASE_DOBOT_COM, dobot_name="Base", dll_path="./dobot_dll/DobotDllBase.dll")
+HELP_DOBOT = DobotBLE(HELP_DOBOT_BLE_MAC, "Help")
+SORT_DOBOT = DobotBLE(SORT_DOBOT_BLE_MAC, "Sort", has_rail=True)
 
-CONV = Conveyor(BASE_ROBOT)
-DIST_SENSOR = DistanceSensor()
-
-# sorting.start_sorting()
+CONV = Conveyor(BASE_DOBOT, 0)
+COLOR_SENSOR = ColorSensor(BASE_DOBOT)
+OBSTACLE_SENSOR = ObstacleSensor(HELP_DOBOT)

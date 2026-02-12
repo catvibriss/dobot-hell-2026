@@ -25,10 +25,10 @@ class DobotDLL:
 
         state = dType.ConnectDobot(api, self._com_port, 115200)
         if state[0] != dType.DobotConnect.DobotConnect_NoError:
-            print(f"[{self.name}] failed")
+            self._log("failed")
             return None
 
-        print(f"[{self.name}] connected")
+        self._log("connected")
         
         dType.SetQueuedCmdClear(api)
         dType.SetPTPJointParams(api, 200, 200, 200, 200, 200, 200, 200, 200)
@@ -86,7 +86,6 @@ class DobotDLL:
     def move(self, relative=False, jump=0, **kwargs):
         pose = dType.GetPose(self.api)
         if not pose:
-            print("Error: Could not retrieve robot pose.")
             return 0
 
         current_x, current_y, current_z, current_r = pose[0], pose[1], pose[2], pose[3]
@@ -381,3 +380,4 @@ class DobotBLE:
         await self._start_queue()
         await self._wait_for_command(last_index)
         await self._stop_and_clear_queue()
+
