@@ -1,77 +1,68 @@
+import asyncio
+from objects.dobots import DobotDLL, DobotBLE
 from config import *
-from main import BASE_ROBOT, SORT_ROBOT, HELP_ROBOT, CONV, DIST_SENSOR
-from time import sleep
 
-# boxes
 BLUE_BOX = [False, False, False, False]
 RED_BOX = [False, False, False, False] 
 GREEN_BOX = [False, False, False, False] 
 YELLOW_BOX = [False, False, False, False] 
 
-work_queue = []
+sorting_queue = []
 
-def start_sorting():
-    count_of_cubes = int(input())
-    for x in range(count_of_cubes, 0, -1):
-        r = (x-1)//4
-        c = (x-1)%4
-        cpos = [BASE_LDPos[0] + BASE_X_OFFSET * c, BASE_LDPos[1] + BASE_Y_OFFSET * r]  
-        BASE_ROBOT.move(x=cpos[0], y=cpos[1], z=BASE_CUBE_Z+2)
-        BASE_ROBOT.set_suction_cup(True)
-        BASE_ROBOT.move(relative=True, z=-3)
-        BASE_ROBOT.move(z=25)
-        BASE_ROBOT.move(x=CONV_BASE_3DPOS[0], y=CONV_BASE_3DPOS[1], z=CONV_BASE_3DPOS[2])
-        BASE_ROBOT.set_suction_cup(False)
-        sleep(0.1)
-        BASE_ROBOT.move(relative=True, z=5)
-        sleep(1)
+def sorting_move(worker: DobotBLE, pick_place: list, drop_place: list):
+    """
+    place cords = [x, l, z] (l equal y for sort rail)
+    """
+    async def execute():
+        await worker.set_suction_cup(False)
+        await worker.move(z=0)
+        await worker.move(x=pick_place[0], l=pick_place[1])
+        await worker.move(z=pick_place[2]+5)
+        await worker.set_suction_cup(True)
+        await worker.move(z=pick_place[2]-2)
+        await worker.move(z=0)
+        await worker.move(x=drop_place[0], l=drop_place[1])
+        await worker.move(z=drop_place[2])
+        await worker.set_suction_cup(False)
+        await worker.move(relative=True, z=5)
+
+    asyncio.run(execute())
 
 def cube_sort_pos(color: int):
     box = []
-    box_ldpos = [0, BOX_CONST_X]
+    box_ldpos = [BOXES_X, 0]
     move_pos = []
 
     match color:
         case -1:
             return None
-        case 0: # blue
-            box = BLUE_BOX
-            box_ldpos[0] = BLUE_BOX_LDPos
-        case 3: # red
+        case 0:
             box = RED_BOX
-            box_ldpos[0] = RED_BOX_LDPos
-        case 1: # green
+            box_ldpos[1] = RED_BOX_FPos
+        case 1: 
             box = GREEN_BOX
-            box_ldpos[0] = GREEN_BOX_LDPos
-        case 2: # yellow
+            box_ldpos[1] = GREEN_BOX_FPos
+        case 2:
+            box = BLUE_BOX
+            box_ldpos[1] = BLUE_BOX_FPos
+        case 3: 
             box = YELLOW_BOX
-            box_ldpos[0] = YELLOW_BOX_LDPos
+            box_ldpos[1] = YELLOW_BOX_FPos
     
     free_space_idx = box.index(False)
     match free_space_idx:
         case 0:
             move_pos = box_ldpos
         case 1:
-            box_ldpos[0] += BOX_X_OFFSET
+            box_ldpos[1] += BOX_L_OFFSET
             move_pos = box_ldpos
         case 2:
-            box_ldpos[1] -= BOX_Y_OFFSET
+            box_ldpos[0] -= BOX_X_OFFSET
             move_pos = box_ldpos
         case 3:
-            box_ldpos[0] += BOX_X_OFFSET
-            box_ldpos[1] -= BOX_Y_OFFSET
+            box_ldpos[0] -= BOX_X_OFFSET
+            box_ldpos[1] += BOX_L_OFFSET
             move_pos = box_ldpos
     
     box[free_space_idx] = True
     return move_pos
-
-def reset_boxes():
-    global BLUE_BOX, RED_BOX, GREEN_BOX, YELLOW_BOX
-    BLUE_BOX = [False, False, False, False]
-    RED_BOX = [False, False, False, False] 
-    GREEN_BOX = [False, False, False, False] 
-    YELLOW_BOX = [False, False, False, False] 
-
-@DIST_SENSOR.on_change
-def on_new_cube(value):
-    print(value)
