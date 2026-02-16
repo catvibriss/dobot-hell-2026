@@ -1,3 +1,4 @@
+# TODO: recalibration
 # = connection =
 DOBOT_DLL_RELATIVE_PATH = "./dobot_dll/DobotDll.dll"
 
@@ -17,17 +18,17 @@ BLUE_BOX_FPos = None
 RED_BOX_FPos = None
 GREEN_BOX_FPos = None
 YELLOW_BOX_FPos = None
-BOXES_X = 228
+BOXES_X = None
 
 BOX_X_OFFSET = MODEL_XY_OFFSET
 BOX_L_OFFSET = MODEL_XY_OFFSET
 
-BOX_Z_PLACE = -109
-BOX_Z_MIN = -90
+BOX_Z_PLACE = None
+BOX_Z_MIN = None
 
 # = base =
-BASE_LDPos = (0, 0)
-BASE_Z_PLACE = 0
+BASE_LDPos = (None, None)
+BASE_Z_PLACE = None
 
 BASE_X_OFFSET = MODEL_XY_OFFSET
 BASE_Y_OFFSET = MODEL_XY_OFFSET
@@ -39,5 +40,5 @@ CONV_POSSIBLE_MAX_FREQ = 41000
 CONV_MAX_FREQ_JUMP = 15500
 CONV_WORK_FREQ = 5500
 
-CONV_BASE_3DPOS = (0, 0, 0) # x, y, z
+CONV_BASE_3DPOS = (None, None, None) # x, y, z
 
