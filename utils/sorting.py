@@ -1,13 +1,8 @@
 import asyncio
 from objects.dobots import DobotDLL, DobotBLE
 from config import *
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from main import BASE_DOBOT, HELP_DOBOT, SORT_DOBOT
-
-BLUE_BOX    = [False, False, False, False]
-RED_BOX     = [False, False, False, False] 
-GREEN_BOX   = [False, False, False, False] 
-YELLOW_BOX  = [False, False, False, False] 
 
 @dataclass
 class Cube:
@@ -15,12 +10,66 @@ class Cube:
     conv_y_offset: float
     buffer_place: int = -1
 
-BASE_DOBOT = BASE_DOBOT
-HELP_DOBOT = HELP_DOBOT
-SORT_DOBOT = SORT_DOBOT
+@dataclass
+class Box:
+    color: int
+    slots: list[bool] = field(default_factory=lambda: [False, False, False, False])
+    base_y: float = 0.0
+    
+    def get_next_position(self) -> list[float]:
+        if False not in self.slots:
+            return None
+        
+        idx = self.slots.index(False)
+        
+        pos_x = BOXES_X
+        pos_l = self.base_y
+        
+        match idx:
+            case 1:
+                pos_l += BOX_L_OFFSET
+            case 2:
+                pos_x -= BOX_X_OFFSET
+            case 3:
+                pos_x -= BOX_X_OFFSET
+                pos_l += BOX_L_OFFSET
+    
+        self.slots[idx] = True        
+        return [pos_x, pos_l, BOXES_Z_CUBE]
 
-buffer_places = []
+BOXES = {0: Box(color=0, base_y=RED_BOX_FPos),
+         1: Box(color=1, base_y=GREEN_BOX_FPos),
+         2: Box(color=2, base_y=BLUE_BOX_FPos),
+         3: Box(color=3, base_y=YELLOW_BOX_FPos)}
+
+class Buffer:
+    def __init__(self, slots: int):
+        self.slots = [False] * slots
+
+    def get_help_position(self, index: int):
+        return [BUFFER_FPos_HELP[0], BUFFER_FPos_HELP[1] + (index * BUFFER_OFFSET), BUFFER_FPos_HELP[2]]
+    
+    def get_sort_position(self, index: int):
+        return [BUFFER_FPos_SORT[0], BUFFER_FPos_SORT[1] - (index * BUFFER_OFFSET), BUFFER_FPos_SORT[2]]
+    
+    def allocate(self, cube: Cube) -> int:
+        for i, occupied in enumerate(self.slots):
+            if not occupied:
+                self.slots[i] = True
+                cube.buffer_place = i
+                return i
+        return -1
+    
+    def release(self, index: int):
+        if 0 <= index < len(self.slots):
+            self.slots[index] = False
+
+BUFFER = Buffer(5)
 sorting_queue: list[Cube] = []
+
+def cube_sort_pos(color: int):
+    box = BOXES[color]
+    return box.get_next_position()
 
 def sorting_move(cube: Cube):
     """
@@ -45,42 +94,3 @@ def sorting_move(cube: Cube):
     drop = cube_sort_pos(cube.color)
 
     asyncio.run(execute(pick, drop))
-
-def cube_sort_pos(color: int):
-    box = []
-    box_ldpos = [BOXES_X, 0]
-    move_pos = []
-
-    match color:
-        case -1:
-            return None
-        case 0:
-            box = RED_BOX
-            box_ldpos[1] = RED_BOX_FPos
-        case 1: 
-            box = GREEN_BOX
-            box_ldpos[1] = GREEN_BOX_FPos
-        case 2:
-            box = BLUE_BOX
-            box_ldpos[1] = BLUE_BOX_FPos
-        case 3: 
-            box = YELLOW_BOX
-            box_ldpos[1] = YELLOW_BOX_FPos
-    
-    free_space_idx = box.index(False)
-    match free_space_idx:
-        case 0:
-            move_pos = box_ldpos
-        case 1:
-            box_ldpos[1] += BOX_L_OFFSET
-            move_pos = box_ldpos
-        case 2:
-            box_ldpos[0] -= BOX_X_OFFSET
-            move_pos = box_ldpos
-        case 3:
-            box_ldpos[0] -= BOX_X_OFFSET
-            box_ldpos[1] += BOX_L_OFFSET
-            move_pos = box_ldpos
-    
-    box[free_space_idx] = True
-    return move_pos

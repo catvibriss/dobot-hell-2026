@@ -14,29 +14,31 @@ SORT_DOBOT_COM = "COM8"
 MODEL_XY_OFFSET = 30
 
 # = boxes =
-BLUE_BOX_FPos = None
-RED_BOX_FPos = None
-GREEN_BOX_FPos = None
+BLUE_BOX_FPos   = None
+RED_BOX_FPos    = None
+GREEN_BOX_FPos  = None
 YELLOW_BOX_FPos = None
-BOXES_X = None
+BOXES_X         = None
+BOXES_Z_CUBE    = None
+BOXES_Z_MOVE    = None
 
 BOX_X_OFFSET = MODEL_XY_OFFSET
 BOX_L_OFFSET = MODEL_XY_OFFSET
 
-BOX_Z_PLACE = None
-BOX_Z_MIN = None
+BOX_Z_PLACE     = None
+BOX_Z_MIN       = None
 
 # = base =
-BASE_LDPos = (None, None)
-BASE_Z_PLACE = None
+BASE_LDPos      = (None, None)
+BASE_Z_PLACE    = None
 
-BASE_X_OFFSET = MODEL_XY_OFFSET
-BASE_Y_OFFSET = MODEL_XY_OFFSET
+BASE_X_OFFSET   = MODEL_XY_OFFSET
+BASE_Y_OFFSET   = MODEL_XY_OFFSET
 
 # = help =
 BUFFER_FPos_HELP = (0,0,0)
 BUFFER_FPos_SORT = (0,0,0)
-BUFFER_OFFSET = 30
+BUFFER_OFFSET    = 30
 
 # = conv =
 CONV_POSSIBLE_MAX_FREQ = 41000
