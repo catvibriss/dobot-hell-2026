@@ -29,7 +29,7 @@ BOX_Z_PLACE     = None
 BOX_Z_MIN       = None
 
 # = base =
-BASE_LDPos      = (None, None)
+BASE_FPos      = (None, None)
 BASE_Z_PLACE    = None
 
 BASE_X_OFFSET   = MODEL_XY_OFFSET
