@@ -47,3 +47,9 @@ class Conveyor:
         mPc = math.pi * 36
         freq = speed * sPc / mPc
         self.set_freq(int(freq), smooth)
+
+class Camera:
+    def __init__(self, port: str):
+        self.port = port
+
+        
