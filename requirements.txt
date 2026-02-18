@@ -1,1 +1,2 @@
 bleak
+opencv-python
