@@ -69,7 +69,7 @@ class Buffer:
             if 0 <= index < len(self.slots):
                 self.slots[index] = False
 
-BUFFER = Buffer(5)
+BUFFER = Buffer(4)
 sorting_queue: list[Cube] = []
 
 def cube_sort_pos(color: int):
