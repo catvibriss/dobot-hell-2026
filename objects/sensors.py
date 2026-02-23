@@ -51,7 +51,8 @@ class ObstacleSensor:
 
         self._enabled = False
 
-        self._loop_handlers = []
+        self._on_obstacle_handlers = []
+        self._on_release_handlers = []
         self._last_state = 0
         self._thread = None
         self._thread_is_running = False
@@ -62,11 +63,19 @@ class ObstacleSensor:
         self.owner._log(f"[OS] {text}")
 
     def on_obstacle(self, func):
-        self._loop_handlers.append(func)
+        self._on_obstacle_handlers.append(func)
 
-    def _loop_trigger(self):
-        self._log("obstacle loop triggered")
-        for func in self._loop_handlers[:]:
+    def on_release(self, func):
+        self._on_release_handlers.append(func)
+
+    def _on_obstacle_trigger(self):
+        self._log("obstacle triggered")
+        for func in self._on_obstacle_handlers[:]:
+            func()
+
+    def _on_release_trigger(self):
+        self._log("release triggered")
+        for func in self._on_release_handlers[:]:
             func()
 
     def _loop(self):
@@ -74,7 +83,9 @@ class ObstacleSensor:
             current = self.state()
             if current != self._last_state:
                 if current == 1 and self._last_state == 0:
-                    self._loop_trigger()
+                    self._on_obstacle_trigger()
+                if current == 0 and self._last_state == 1:
+                    self._on_release_trigger()
                 self._last_state = current
             time.sleep(0.01)
 
