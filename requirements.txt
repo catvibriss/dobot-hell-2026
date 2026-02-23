@@ -1,2 +1,4 @@
 bleak
 opencv-python
+customtkinter
+pillow
