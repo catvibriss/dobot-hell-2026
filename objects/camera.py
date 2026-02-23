@@ -1,400 +1,334 @@
 import cv2
 import numpy as np
 import time
-from collections import deque
+from pprint import pprint
 
-# ==============================================================================
-# НАСТРОЙКИ
-# ==============================================================================
+BELT_WIDTH_MM = 100.0
+ROI_WIDTH_MM = 70.0
+ROI_HEIGHT_MM = 100.0
+CUBE_SIZE_MM = 27.0
 
-CAMERA_INDEX = 1              # Индекс веб-камеры
-CONVEYOR_WIDTH_MM = 100.0     # Ширина ленты конвейера в мм
-
-MIN_CUBE_AREA = 800           # Минимальная площадь кубика в пикселях
-MAX_TRACK_DISTANCE = 40       # Максимальное расстояние для трека (пиксели)
-TRACK_TIMEOUT = 3.0           # Время жизни трека без обновлений (сек)
-QUEUE_MAX_SIZE = 50           # Максимум записей в очереди
-
-# Базовые диапазоны HSV (будут переопределены трекбарами)
-COLOR_BASE_RANGES = {
-    'Red':    ([0, 70, 50], [15, 255, 255]),
-    'Green':  ([40, 70, 50], [80, 255, 255]),
-    'Blue':   ([100, 70, 50], [130, 255, 255]),
-    'Yellow': ([20, 70, 50], [35, 255, 255])
+COLOR_RANGES = {
+    'RED':    [((0, 100, 100), (15, 255, 255)), ((160, 100, 100), (180, 255, 255))],
+    'GREEN':  [((40, 100, 100), (70, 255, 255))],
+    'BLUE':   [((100, 100, 100), (130, 255, 255))],
+    'YELLOW': [((20, 100, 100), (35, 255, 255))]
 }
 
-COLOR_BOXES = {
-    'Red': (0, 0, 255),
-    'Green': (0, 255, 0),
-    'Blue': (255, 0, 0),
-    'Yellow': (0, 255, 255)
-}
+DEFAULT_THRESHOLD = 60
+DEFAULT_KERNEL = 5
+DEFAULT_DILATE = 2
+DEFAULT_ERODE = 1
 
-# ==============================================================================
-# КЛАССЫ
-# ==============================================================================
+ROI_WINDOW_WIDTH = 400
+ROI_WINDOW_HEIGHT = 300
 
-class TrackedCube:
-    def __init__(self, track_id, color, center_x, center_y, deviation_mm):
-        self.id = track_id
+def on_cube_detected(cube_data):
+    pprint(cube_data)
+
+class Cube:
+    def __init__(self, color, center_mm, timestamp):
         self.color = color
-        self.center_x = center_x
-        self.center_y = center_y
-        self.deviation_mm = deviation_mm
-        self.frames_seen = 1
-        self.last_seen = time.time()
-        self.counted = False
-        self.start_x = center_x  # Для отслеживания движения
+        self.center_mm = center_mm
+        self.timestamp = timestamp
+        self.reported = False
+        self.global_pos = (0, 0)
+        self.area = 0
 
-class CubeQueue:
-    def __init__(self, max_size=50):
-        self.queue = deque(maxlen=max_size)
-        self.next_track_id = 1
-        self.tracked_cubes = {}
-        self.counting_enabled = True
-        self.total_counted = 0
-    
-    def toggle_counting(self):
-        self.counting_enabled = not self.counting_enabled
-        return self.counting_enabled
-    
-    def update_tracks(self, detections, conveyor_rect, scale_px_per_mm, center_y):
-        current_time = time.time()
-        matched_ids = set()
+class ConveyorTracker:
+    def __init__(self, cube_callback=None):
+        self.threshold = DEFAULT_THRESHOLD
+        self.kernel_size = DEFAULT_KERNEL
+        self.dilate_iter = DEFAULT_DILATE
+        self.erode_iter = DEFAULT_ERODE
+        self.window_created = False
+        self.ppm = 1.0
+        self.active_cubes = {}
+        self.cube_id_counter = 0
+        self.cube_timeout = 2.0
+        self.min_cube_area = 500
+        self.cube_callback = cube_callback
+
+    def create_windows(self):
+        cv2.namedWindow("Settings")
+        cv2.createTrackbar("Threshold", "Settings", self.threshold, 255, self.nothing)
+        cv2.createTrackbar("Kernel", "Settings", self.kernel_size, 21, self.nothing)
+        cv2.createTrackbar("Dilate", "Settings", self.dilate_iter, 10, self.nothing)
+        cv2.createTrackbar("Erode", "Settings", self.erode_iter, 10, self.nothing)
+        cv2.createTrackbar("Min Cube Area", "Settings", self.min_cube_area, 5000, self.nothing)
+        self.window_created = True
+
+    def nothing(self, x):
+        pass
+
+    def get_settings(self):
+        self.threshold = cv2.getTrackbarPos("Threshold", "Settings")
+        self.kernel_size = cv2.getTrackbarPos("Kernel", "Settings")
+        self.dilate_iter = cv2.getTrackbarPos("Dilate", "Settings")
+        self.erode_iter = cv2.getTrackbarPos("Erode", "Settings")
+        self.min_cube_area = cv2.getTrackbarPos("Min Cube Area", "Settings")
         
-        for det in detections:
-            best_match_id = None
-            best_distance = float('inf')
-            
-            for track_id, track in self.tracked_cubes.items():
-                if track.color != det['color']:
-                    continue
-                
-                distance = np.sqrt(
-                    (track.center_x - det['center_x'])**2 + 
-                    (track.center_y - det['center_y'])**2
-                )
-                
-                if distance < best_distance and distance < MAX_TRACK_DISTANCE:
-                    best_distance = distance
-                    best_match_id = track_id
-            
-            if best_match_id is not None:
-                track = self.tracked_cubes[best_match_id]
-                track.center_x = det['center_x']
-                track.center_y = det['center_y']
-                track.frames_seen += 1
-                track.last_seen = current_time
-                
-                # Считаем только если: включен счётчик + трек новый + достаточно кадров
-                if not track.counted and self.counting_enabled and track.frames_seen >= 3:
-                    self.queue.append({
-                        'id': track.id,
-                        'color': track.color,
-                        'deviation_mm': track.deviation_mm,
-                        'timestamp': time.strftime("%H:%M:%S", time.localtime())
-                    })
-                    track.counted = True
-                    self.total_counted += 1
-                    print(f"[{track.last_seen:.0f}] ✅ Кубик #{track.id}: {track.color}, Отклонение: {track.deviation_mm:+.1f} мм")
-                
-                matched_ids.add(best_match_id)
-            else:
-                track_id = self.next_track_id
-                self.next_track_id += 1
-                
-                deviation_mm = 0.0
-                if scale_px_per_mm > 0 and conveyor_rect:
-                    offset_px = center_y - det['center_y']
-                    deviation_mm = offset_px / scale_px_per_mm
-                
-                new_track = TrackedCube(track_id, det['color'], det['center_x'], det['center_y'], deviation_mm)
-                self.tracked_cubes[track_id] = new_track
+        if self.kernel_size % 2 == 0:
+            self.kernel_size += 1
+            cv2.setTrackbarPos("Kernel", "Settings", self.kernel_size)
+
+    def create_blank_roi(self):
+        blank = np.zeros((ROI_WINDOW_HEIGHT, ROI_WINDOW_WIDTH, 3), dtype=np.uint8)
+        cv2.putText(blank, "NO SIGNAL", (120, 140), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+        cv2.putText(blank, "Adjust threshold", (100, 170), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 1)
+        return blank
+
+    def draw_coordinates(self, image):
+        if image is None or image.size == 0:
+            return self.create_blank_roi()
+        h, w = image.shape[:2]
+        if h == 0 or w == 0:
+            return self.create_blank_roi()
+
+        cx, cy = w // 2, h // 2
+        color = (0, 255, 0)
         
-        # Удаляем старые треки
-        stale_ids = [tid for tid, tr in self.tracked_cubes.items() 
-                     if current_time - tr.last_seen > TRACK_TIMEOUT]
-        for track_id in stale_ids:
-            del self.tracked_cubes[track_id]
-    
-    def get_active_count(self):
-        return len(self.tracked_cubes)
-    
-    def get_queue_count(self):
-        return len(self.queue)
-
-def nothing(x):
-    pass
-
-def create_color_masks_grid(masks_dict, cell_size=(160, 120)):
-    colors = list(COLOR_BASE_RANGES.keys())
-    grid_h, grid_w = cell_size[0] * 2, cell_size[1] * 2
-    grid = np.zeros((grid_h, grid_w, 3), dtype=np.uint8)
-    
-    for i, color_name in enumerate(colors):
-        row = i // 2
-        col = i % 2
-        x_off = col * cell_size[1]
-        y_off = row * cell_size[0]
+        cv2.line(image, (cx, 0), (cx, h), color, 1)
+        cv2.line(image, (0, cy), (w, cy), color, 1)
         
-        mask = masks_dict.get(color_name, np.zeros(cell_size, dtype=np.uint8))
-        mask_resized = cv2.resize(mask, (cell_size[1], cell_size[0]))
-        mask_color = cv2.cvtColor(mask_resized, cv2.COLOR_GRAY2BGR)
+        cv2.putText(image, "Y:-50", (5, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
+        cv2.putText(image, "Y:+50", (5, h - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
+        cv2.putText(image, "X:-35", (5, cy - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
+        cv2.putText(image, "X:+35", (w - 50, cy - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
+        cv2.putText(image, "(0,0)", (cx + 5, cy - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 0), 1)
         
-        cv2.putText(mask_color, color_name, (5, 20), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+        return image
+
+    def scale_to_roi_window(self, image):
+        if image is None or image.size == 0:
+            return self.create_blank_roi()
+        h, w = image.shape[:2]
+        if h == 0 or w == 0:
+            return self.create_blank_roi()
         
-        grid[y_off:y_off+cell_size[0], x_off:x_off+cell_size[1]] = mask_color
-    
-    return grid
+        scale = min(ROI_WINDOW_WIDTH / w, ROI_WINDOW_HEIGHT / h)
+        new_w = int(w * scale)
+        new_h = int(h * scale)
+        
+        resized = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+        
+        scaled = np.zeros((ROI_WINDOW_HEIGHT, ROI_WINDOW_WIDTH, 3), dtype=np.uint8)
+        offset_x = (ROI_WINDOW_WIDTH - new_w) // 2
+        offset_y = (ROI_WINDOW_HEIGHT - new_h) // 2
+        
+        scaled[offset_y:offset_y+new_h, offset_x:offset_x+new_w] = resized
+        return scaled
 
-# ==============================================================================
-# ОСНОВНАЯ ПРОГРАММА
-# ==============================================================================
-
-def main():
-    cap = cv2.VideoCapture(CAMERA_INDEX)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-    
-    if not cap.isOpened():
-        print(f"Ошибка: Не удалось открыть камеру {CAMERA_INDEX}")
-        return
-
-    # Окна (все можно ресайзить мышкой)
-    cv2.namedWindow("Live Feed", cv2.WINDOW_NORMAL)
-    cv2.namedWindow("Debug Masks", cv2.WINDOW_NORMAL)
-    cv2.namedWindow("Calibration", cv2.WINDOW_NORMAL)
-    
-    cv2.resizeWindow("Live Feed", 640, 480)
-    cv2.resizeWindow("Debug Masks", 320, 240)
-    cv2.resizeWindow("Calibration", 350, 400)
-
-    # Трекбары для конвейера
-    cv2.createTrackbar("Conv Threshold", "Calibration", 60, 255, nothing)
-    
-    # Трекбары для КАЖДОГО цвета отдельно (особенно важно для красного!)
-    for color_name in COLOR_BASE_RANGES.keys():
-        cv2.createTrackbar(f"{color_name} H-Min", "Calibration", COLOR_BASE_RANGES[color_name][0][0], 180, nothing)
-        cv2.createTrackbar(f"{color_name} H-Max", "Calibration", COLOR_BASE_RANGES[color_name][1][0], 180, nothing)
-        cv2.createTrackbar(f"{color_name} S-Min", "Calibration", COLOR_BASE_RANGES[color_name][0][1], 255, nothing)
-        cv2.createTrackbar(f"{color_name} V-Min", "Calibration", COLOR_BASE_RANGES[color_name][0][2], 255, nothing)
-    
-    cv2.createTrackbar("Min Area", "Calibration", 800, 5000, nothing)
-
-    cube_queue = CubeQueue(max_size=QUEUE_MAX_SIZE)
-    kernel = np.ones((5, 5), np.uint8)
-
-    print("=" * 60)
-    print("СИСТЕМА ЗАПУЩЕНА")
-    print("=" * 60)
-    print(f"Камера: {CAMERA_INDEX} | Ширина ленты: {CONVEYOR_WIDTH_MM} мм")
-    print("Управление:")
-    print("  [SPACE] - Старт/Стоп счётчика")
-    print("  [Q]     - Выход")
-    print("  [R]     - Сброс счётчика")
-    print("=" * 60)
-
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
-
-        # --- 1. КОНВЕЙЕР ---
+    def process_frame(self, frame):
+        self.get_settings()
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-        thresh_val = cv2.getTrackbarPos("Conv Threshold", "Calibration")
-        _, mask_conv = cv2.threshold(blurred, thresh_val, 255, cv2.THRESH_BINARY_INV)
-        mask_conv = cv2.morphologyEx(mask_conv, cv2.MORPH_CLOSE, kernel)
-        mask_conv = cv2.morphologyEx(mask_conv, cv2.MORPH_OPEN, kernel)
         
-        contours, _ = cv2.findContours(mask_conv, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        output_frame = frame.copy()
+        _, thresh = cv2.threshold(gray, self.threshold, 255, cv2.THRESH_BINARY_INV)
+        kernel = np.ones((self.kernel_size, self.kernel_size), np.uint8)
+        morph = cv2.dilate(thresh, kernel, iterations=self.dilate_iter)
+        morph = cv2.erode(morph, kernel, iterations=self.erode_iter)
+        thresh_color = cv2.cvtColor(morph, cv2.COLOR_GRAY2BGR)
         
-        conveyor_rect = None
-        scale_px_per_mm = 0.0
-        center_x, center_y = 0, 0
-        conveyor_width_px = 0
+        contours, _ = cv2.findContours(morph, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        belt_contour = None
+        max_area = 0
+        
+        for cnt in contours:
+            area = cv2.contourArea(cnt)
+            if area > 5000 and area > max_area:
+                max_area = area
+                belt_contour = cnt
+        
+        display = frame.copy()
+        roi_raw = None 
+        roi_coords = None
 
-        if contours:
-            c = max(contours, key=cv2.contourArea)
-            x, y, w, h = cv2.boundingRect(c)
+        if belt_contour is not None:
+            x, y, w, h = cv2.boundingRect(belt_contour)
             
-            if w > h and h > 20: 
-                conveyor_rect = (x, y, w, h)
-                conveyor_width_px = h  # Высота прямоугольника = ширина ленты
-                scale_px_per_mm = h / CONVEYOR_WIDTH_MM
-                center_x = int(x + w / 2)
-                center_y = int(y + h / 2)
+            cv2.drawContours(display, [belt_contour], -1, (0, 255, 0), 2)
+            cv2.rectangle(display, (x, y), (x + w, y + h), (255, 0, 0), 2)
+            
+            if h > 0:
+                self.ppm = h / BELT_WIDTH_MM
                 
-                cv2.rectangle(output_frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-                cv2.line(output_frame, (center_x, y), (center_x, y + h), (255, 0, 0), 2)
+                roi_w_px = int(ROI_WIDTH_MM * self.ppm)
+                roi_h_px = int(ROI_HEIGHT_MM * self.ppm)
                 
-                # Шкала мм
-                step_mm = 10.0 
-                half_width = CONVEYOR_WIDTH_MM / 2.0
-                current_mm = -half_width
-                while current_mm <= half_width:
-                    offset_px = int(current_mm * scale_px_per_mm)
-                    pos_y = center_y - offset_px
-                    tick_len = 10 if abs(current_mm) < 0.1 else 5
-                    cv2.line(output_frame, (center_x - tick_len, pos_y), 
-                             (center_x + tick_len, pos_y), (0, 255, 255), 1)
-                    label = "0" if abs(current_mm) < 0.1 else f"{int(current_mm)}"
-                    cv2.putText(output_frame, label, (center_x + 15, pos_y + 5), 
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
-                    current_mm += step_mm
+                center_x = x + w // 2
+                center_y = y + h // 2
+                
+                roi_x = int(center_x - roi_w_px / 2)
+                roi_y = int(center_y - roi_h_px / 2)
+                
+                h_frame, w_frame = frame.shape[:2]
+                roi_x = max(0, roi_x)
+                roi_y = max(0, roi_y)
+                roi_x2 = min(w_frame, roi_x + roi_w_px)
+                roi_y2 = min(h_frame, roi_y + roi_h_px)
 
-        # --- 2. КУБИКИ ---
-        MIN_CUBE_AREA = cv2.getTrackbarPos("Min Area", "Calibration")
-        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-        detections = []
-        color_masks = {}
-
-        for color_name in COLOR_BASE_RANGES.keys():
-            # Читаем трекбары для каждого цвета
-            h_min = cv2.getTrackbarPos(f"{color_name} H-Min", "Calibration")
-            h_max = cv2.getTrackbarPos(f"{color_name} H-Max", "Calibration")
-            s_min = cv2.getTrackbarPos(f"{color_name} S-Min", "Calibration")
-            v_min = cv2.getTrackbarPos(f"{color_name} V-Min", "Calibration")
+                if roi_x2 > roi_x and roi_y2 > roi_y:
+                    roi_raw = frame[roi_y:roi_y2, roi_x:roi_x2].copy()
+                    roi_coords = (roi_x, roi_y, roi_x2 - roi_x, roi_y2 - roi_y)
+                    cv2.rectangle(display, (roi_x, roi_y), (roi_x2, roi_y2), (0, 255, 255), 2)
+        
+        detected_cubes = []
+        if roi_raw is not None and roi_coords is not None:
+            hsv_roi = cv2.cvtColor(roi_raw, cv2.COLOR_BGR2HSV)
             
-            # Для красного цвета: если H-Max < H-Min, значит диапазон переходит через 0
-            if color_name == 'Red' and h_max < h_min:
-                # Два диапазона для красного (0-10 и 170-180)
-                lower1 = np.array([0, s_min, v_min], dtype=np.uint8)
-                upper1 = np.array([h_max, 255, 255], dtype=np.uint8)
-                lower2 = np.array([h_min, s_min, v_min], dtype=np.uint8)
-                upper2 = np.array([180, 255, 255], dtype=np.uint8)
+            combined_mask = np.zeros(roi_raw.shape[:2], dtype=np.uint8)
+            cube_masks = {}
+            
+            for color_name, ranges in COLOR_RANGES.items():
+                color_mask = np.zeros(roi_raw.shape[:2], dtype=np.uint8)
+                for lower, upper in ranges:
+                    l_arr = np.array(lower, dtype=np.uint8)
+                    u_arr = np.array(upper, dtype=np.uint8)
+                    mask = cv2.inRange(hsv_roi, l_arr, u_arr)
+                    color_mask = cv2.bitwise_or(color_mask, mask)
                 
-                mask1 = cv2.inRange(hsv, lower1, upper1)
-                mask2 = cv2.inRange(hsv, lower2, upper2)
-                mask_color = cv2.bitwise_or(mask1, mask2)
-            else:
-                dynamic_lower = np.array([h_min, s_min, v_min], dtype=np.uint8)
-                dynamic_upper = np.array([h_max, 255, 255], dtype=np.uint8)
-                mask_color = cv2.inRange(hsv, dynamic_lower, dynamic_upper)
+                color_mask = cv2.morphologyEx(color_mask, cv2.MORPH_CLOSE, np.ones((5,5), np.uint8))
+                cube_masks[color_name] = color_mask
+                combined_mask = cv2.bitwise_or(combined_mask, color_mask)
             
-            mask_color = cv2.morphologyEx(mask_color, cv2.MORPH_OPEN, kernel)
-            mask_color = cv2.morphologyEx(mask_color, cv2.MORPH_CLOSE, kernel)
-            color_masks[color_name] = mask_color
+            cube_contours, _ = cv2.findContours(combined_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             
-            cnts, _ = cv2.findContours(mask_color, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            cube_size_px = CUBE_SIZE_MM * self.ppm
+            min_cube_area = max(self.min_cube_area, int((cube_size_px * 0.7) ** 2))
+            max_cube_area = int((cube_size_px * 1.5) ** 2)
             
-            for cnt in cnts:
+            for cnt in cube_contours:
                 area = cv2.contourArea(cnt)
-                if area > MIN_CUBE_AREA: 
+                if min_cube_area <= area <= max_cube_area:
                     x, y, w, h = cv2.boundingRect(cnt)
-                    cube_center_x = x + w // 2
-                    cube_center_y = y + h // 2
+                    cx_roi = x + w // 2
+                    cy_roi = y + h // 2
                     
-                    on_conveyor = False
-                    if conveyor_rect:
-                        cx, cy, cw, ch = conveyor_rect
-                        if cy - 10 <= cube_center_y <= cy + ch + 10:
-                            on_conveyor = True
+                    color = None
+                    max_pixels = 0
+                    for color_name, mask in cube_masks.items():
+                        roi_cnt_mask = mask[y:y+h, x:x+w]
+                        pixels = cv2.countNonZero(roi_cnt_mask)
+                        if pixels > max_pixels and pixels > 20:
+                            max_pixels = pixels
+                            color = color_name
                     
-                    if not on_conveyor:
-                        continue
-                    
-                    # Расчет отклонения
-                    deviation_mm = 0.0
-                    if scale_px_per_mm > 0:
-                        offset_px = center_y - cube_center_y
-                        deviation_mm = offset_px / scale_px_per_mm
-                    
-                    detections.append({
-                        'color': color_name,
-                        'center_x': cube_center_x,
-                        'center_y': cube_center_y,
-                        'area': area,
-                        'rect': (x, y, w, h),
-                        'deviation_mm': deviation_mm
-                    })
-
-        # Обновляем треки
-        cube_queue.update_tracks(detections, conveyor_rect, scale_px_per_mm, center_y)
+                    if color:
+                        roi_center_x = roi_raw.shape[1] // 2
+                        roi_center_y = roi_raw.shape[0] // 2
+                        
+                        x_mm = (cx_roi - roi_center_x) / self.ppm
+                        y_mm = (cy_roi - roi_center_y) / self.ppm
+                        
+                        global_x = roi_coords[0] + cx_roi
+                        global_y = roi_coords[1] + cy_roi
+                        
+                        detected_cubes.append({
+                            'color': color,
+                            'x_mm': x_mm,
+                            'y_mm': y_mm,
+                            'global_pos': (global_x, global_y),
+                            'area': area,
+                            'contour': cnt
+                        })
+                        
+                        cv2.rectangle(roi_raw, (x, y), (x + w, y + h), (0, 255, 255), 2)
+                        cv2.putText(roi_raw, f"{color}", (x, y - 5), 
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+                        cv2.putText(roi_raw, f"({x_mm:+.1f}, {y_mm:+.1f})", (x, y + h + 15), 
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 0), 1)
+            
+            roi_raw = self.draw_coordinates(roi_raw)
+       
+        roi_view = self.scale_to_roi_window(roi_raw)
         
-        # Отрисовка треков
-        for track_id, track in cube_queue.tracked_cubes.items():
-            box_color = COLOR_BOXES.get(track.color, (255, 255, 255))
-            for det in detections:
-                if det['color'] == track.color:
-                    dist = np.sqrt((track.center_x - det['center_x'])**2 + 
-                                   (track.center_y - det['center_y'])**2)
-                    if dist < MAX_TRACK_DISTANCE:
-                        x, y, w, h = det['rect']
-                        cv2.rectangle(output_frame, (x, y), (x + w, y + h), box_color, 2)
-                        status = "✓" if track.counted else "..."
-                        count_status = "ON" if cube_queue.counting_enabled else "OFF"
-                        label = f"#{track.id}{status} [{count_status}]"
-                        cv2.putText(output_frame, label, (x, y - 10), 
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, box_color, 2)
-                        break
-
-        # --- 3. ИНТЕРФЕЙС ---
-        status_color = (0, 255, 0) if cube_queue.counting_enabled else (0, 0, 255)
-        status_text = "COUNTING: ON" if cube_queue.counting_enabled else "COUNTING: OFF"
-        cv2.putText(output_frame, status_text, (10, 30), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, status_color, 2)
-        cv2.putText(output_frame, f"Total: {cube_queue.total_counted}", (10, 60), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-        cv2.putText(output_frame, f"Active: {cube_queue.get_active_count()}", (10, 90), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        current_time = time.time()
+        reported_cubes = []
         
-        # Отладка конвейера
-        debug_info = [
-            f"Conv Width: {conveyor_width_px} px",
-            f"Scale: {scale_px_per_mm:.2f} px/mm",
-            f"Center Y: {center_y}",
-            f"Threshold: {thresh_val}"
-        ]
-        for i, info in enumerate(debug_info):
-            cv2.putText(output_frame, info, (10, 120 + i*25), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
-
-        masks_grid = create_color_masks_grid(color_masks)
+        for cube in detected_cubes:
+            matched = False
+            for cube_id, tracked in self.active_cubes.items():
+                dist = np.sqrt((cube['global_pos'][0] - tracked.global_pos[0])**2 + 
+                              (cube['global_pos'][1] - tracked.global_pos[1])**2)
+                if dist < 30:
+                    tracked.timestamp = current_time
+                    tracked.global_pos = cube['global_pos']
+                    
+                    if not tracked.reported:
+                        tracked.reported = True
+                        reported_cubes.append(tracked)
+                    matched = True
+                    break
+            
+            if not matched:
+                new_id = self.cube_id_counter
+                self.cube_id_counter += 1
+                new_cube = Cube(cube['color'], (cube['x_mm'], cube['y_mm']), current_time)
+                new_cube.global_pos = cube['global_pos']
+                new_cube.reported = False
+                new_cube.area = cube['area']
+                self.active_cubes[new_id] = new_cube
+                new_cube.reported = True
+                reported_cubes.append(new_cube)
         
-        # Окно калибровки с информацией
-        calib_frame = np.zeros((400, 350, 3), dtype=np.uint8)
-        calib_text = [
-            f"CONVEYOR CALIBRATION",
-            f"Width (px): {conveyor_width_px}",
-            f"Scale: {scale_px_per_mm:.2f} px/mm",
-            f"Center Y: {center_y}",
-            f"",
-            f"COUNTING: {'ON' if cube_queue.counting_enabled else 'OFF'}",
-            f"Total Counted: {cube_queue.total_counted}",
-            f"",
-            f"CONTROLS:",
-            f"[SPACE] Toggle",
-            f"[R] Reset",
-            f"[Q] Quit"
-        ]
-        for i, text in enumerate(calib_text):
-            color = (0, 255, 0) if "ON" in text else (255, 255, 255)
-            cv2.putText(calib_frame, text, (10, 30 + i*25), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+        to_remove = [cid for cid, cube in self.active_cubes.items() 
+                    if current_time - cube.timestamp > self.cube_timeout]
+        for cid in to_remove:
+            del self.active_cubes[cid]
+        
+        for cube in reported_cubes:
+            cube_data = {
+                'color': cube.color,
+                'x_mm': cube.center_mm[0],
+                'y_mm': cube.center_mm[1],
+                'timestamp': cube.timestamp,
+                'area': cube.area,
+                'global_pos': cube.global_pos
+            }
+            
+            if self.cube_callback is not None:
+                self.cube_callback(cube_data)
+            
+            print(f"[CUBE DETECTED] Color: {cube.color:6s}")
+        
+        cv2.putText(display, f"Cubes in ROI: {len(detected_cubes)}", (10, 90), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        cv2.putText(display, f"Tracked: {len(self.active_cubes)}", (10, 120), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        
+        return display, roi_view, thresh_color
 
-        cv2.imshow("Calibration", calib_frame)
-        cv2.imshow("Debug Masks", masks_grid)
-        cv2.imshow("Live Feed", output_frame)
+    def run(self):
+        cap = cv2.VideoCapture(0)
+        if not cap.isOpened():
+            print("Ошибка камеры")
+            return
 
-        key = cv2.waitKey(1) & 0xFF
-        if key == ord('q'):
-            break
-        elif key == ord(' '):
-            state = cube_queue.toggle_counting()
-            print(f"\n{'✅ СЧЁТЧИК ВКЛЮЧЕН' if state else '❌ СЧЁТЧИК ОТКЛЮЧЕН'}\n")
-        elif key == ord('r'):
-            cube_queue.queue.clear()
-            cube_queue.tracked_cubes.clear()
-            cube_queue.total_counted = 0
-            cube_queue.next_track_id = 1
-            print("\n🔄 СЧЁТЧИК СБРОШЕН\n")
+        self.create_windows()
 
-    print(f"\nВсего кубиков: {cube_queue.total_counted}")
-    cap.release()
-    cv2.destroyAllWindows()
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            
+            main_view, roi_view, binary_view = self.process_frame(frame)
+            
+            if main_view is not None and main_view.size > 0:
+                cv2.imshow("1. Main Camera", main_view)
+            if roi_view is not None and roi_view.size > 0:
+                cv2.imshow("2. ROI with Cubes", roi_view)
+            if binary_view is not None and binary_view.size > 0:
+                cv2.imshow("3. Binary Debug", binary_view)
+            
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord('q'):
+                break
+
+        cap.release()
+        cv2.destroyAllWindows()
 
 if __name__ == "__main__":
-    main()
+    tracker = ConveyorTracker(cube_callback=on_cube_detected)
+    tracker.run()
