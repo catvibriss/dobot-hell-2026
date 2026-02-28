@@ -2,7 +2,7 @@ import asyncio
 from objects.dobots import DobotDLL, DobotBLE
 from config import *
 from dataclasses import dataclass, field
-from main import BASE_DOBOT, HELP_DOBOT, SORT_DOBOT
+import state
 import time
 import random
 
@@ -80,7 +80,7 @@ async def sorting_move(cube: Cube):
     """
     place cords = [x, l, z] (l equal y for sort rail)
     """
-    worker = SORT_DOBOT
+    worker = state.SORT_DOBOT
 
     async def execute(pick_place, drop_place) -> None:
         await worker.set_suction_cup(False)
@@ -148,7 +148,10 @@ def place_from_base(base_index: int):
     [0, 1
     2, 3]
     """
-    worker = BASE_DOBOT
+    worker = state.BASE_DOBOT
+    print(state)
+    print(state.BASE_DOBOT)
+    print(type(state.BASE_DOBOT))
 
     row = (base_index)//4
     column = (base_index)%4
@@ -162,8 +165,9 @@ def place_from_base(base_index: int):
     worker.set_suction_cup(False)
     worker.move(relative=True, z=5)
 
-def start_sorting(randomize: bool = False):
-    indexes = list(range(16))
+def start_sorting(cubes: int = 16, randomize: bool = False):
+    cubes = min(max(1, cubes), 16)
+    indexes = list(range(cubes))
     if randomize:
         random.shuffle(indexes)
 

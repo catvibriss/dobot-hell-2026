@@ -1,6 +1,6 @@
 from objects.dobots import DobotDLL
 from dobot_dll import DobotDllType as dType
-from main import *
+from state import *
 
 class EMotor:
     def __init__(self, owner: DobotDLL, motor_id: int = 0):

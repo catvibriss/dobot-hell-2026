@@ -1,4 +1,4 @@
-# TODO: recalibration
+# TODO: json config for ctiknter (а зачем я пишу TODO на английском ваще че нах)
 # = connection =
 DOBOT_DLL_RELATIVE_PATH = "./dobot_dll/DobotDll.dll"
 
