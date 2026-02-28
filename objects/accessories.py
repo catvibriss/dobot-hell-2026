@@ -12,6 +12,7 @@ class Conveyor:
             return
         
         self.owner = owner 
+        self.api = self.owner.api
         self.m_index = m_index
 
         self._last_freq = 0

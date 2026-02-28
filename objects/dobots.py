@@ -5,7 +5,13 @@ from bleak import BleakClient
 import asyncio
 import struct
 
-class DobotDLL:
+class MetaDobotDLL(type):
+    def __instancecheck__(self, instance):
+        if type(instance) in (DobotDLL, BlankDobotDLL):
+            return True
+        return False
+
+class DobotDLL(metaclass=MetaDobotDLL):
     def __init__(self, com_port: str, dll_path: str, dobot_name: str = "Dobot", has_rail: bool = False):
         self.api = None
         self.name = dobot_name
@@ -120,6 +126,26 @@ class DobotDLL:
             dType.dSleep(100) 
 
         self._stop_and_clear_queue()
+
+class BlankDobotDLL:
+    def __init__(self, com_port: str, dll_path: str, dobot_name: str = "Dobot", has_rail: bool = False):
+        self.api = None
+        self.name = dobot_name
+
+        self._com_port = com_port
+        self._dll_path = dll_path
+        self._has_rail = has_rail
+
+        self._init_dType()
+
+    def __getattribute__(self, name):
+        print(name)
+
+        def handler(*args, **kwargs):
+            print(f"\r : {args}, {kwargs}")
+            return self
+        
+        return handler
 
 class DobotBLE:
     SERVICE_UUID = "0003CDD0-0000-1000-8000-00805F9B0131"
