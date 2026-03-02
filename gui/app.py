@@ -3,8 +3,8 @@ import customtkinter as ctk
 from PIL import Image
 from utils import sorting
 
-# ctk.set_appearance_mode("Dark")
-# ctk.set_default_color_theme("blue")
+ctk.set_appearance_mode("Dark")
+ctk.set_default_color_theme("blue")
 
 def label_image(master: any, path: str, size: tuple[int, int], rotate: int = 0) -> ctk.CTkLabel:
     img = Image.open(path).convert("RGBA")
@@ -149,11 +149,9 @@ class DobotApp(ctk.CTk):
     def camera_page(self):
         frame_name = "camera"
         frame = ctk.CTkFrame(self.main_area)
-        
-        ctk.CTkLabel(frame, text=f"well cum to {frame_name}", font=ctk.CTkFont(size=24)).pack(pady=20)
 
         self.frames[frame_name] = frame
-        self.sidebar_pages.append((frame_name, "FDFG"))
+        self.sidebar_pages.append((frame_name, "camera"))
 
     def settings_page(self):
         frame_name = "settings"

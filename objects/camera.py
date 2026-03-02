@@ -1,7 +1,8 @@
 import cv2
 import numpy as np
 import time
-from pprint import pprint
+import threading
+from functools import wraps
 
 BELT_WIDTH_MM = 100.0
 ROI_WIDTH_MM = 70.0
@@ -15,16 +16,8 @@ COLOR_RANGES = {
     'YELLOW': [((20, 100, 100), (35, 255, 255))]
 }
 
-DEFAULT_THRESHOLD = 60
-DEFAULT_KERNEL = 5
-DEFAULT_DILATE = 2
-DEFAULT_ERODE = 1
-
 ROI_WINDOW_WIDTH = 400
 ROI_WINDOW_HEIGHT = 300
-
-def on_cube_detected(cube_data):
-    pprint(cube_data)
 
 class Cube:
     def __init__(self, color, center_mm, timestamp):
@@ -36,95 +29,81 @@ class Cube:
         self.area = 0
 
 class ConveyorTracker:
-    def __init__(self, cube_callback=None):
-        self.threshold = DEFAULT_THRESHOLD
-        self.kernel_size = DEFAULT_KERNEL
-        self.dilate_iter = DEFAULT_DILATE
-        self.erode_iter = DEFAULT_ERODE
-        self.window_created = False
+    def __init__(self):
+        self.threshold = 60
+        self.kernel_size = 5
+        self.dilate_iter = 2
+        self.erode_iter = 1
         self.ppm = 1.0
         self.active_cubes = {}
         self.cube_id_counter = 0
         self.cube_timeout = 2.0
         self.min_cube_area = 500
-        self.cube_callback = cube_callback
-
-    def create_windows(self):
-        cv2.namedWindow("Settings")
-        cv2.createTrackbar("Threshold", "Settings", self.threshold, 255, self.nothing)
-        cv2.createTrackbar("Kernel", "Settings", self.kernel_size, 21, self.nothing)
-        cv2.createTrackbar("Dilate", "Settings", self.dilate_iter, 10, self.nothing)
-        cv2.createTrackbar("Erode", "Settings", self.erode_iter, 10, self.nothing)
-        cv2.createTrackbar("Min Cube Area", "Settings", self.min_cube_area, 5000, self.nothing)
-        self.window_created = True
-
-    def nothing(self, x):
-        pass
-
-    def get_settings(self):
-        self.threshold = cv2.getTrackbarPos("Threshold", "Settings")
-        self.kernel_size = cv2.getTrackbarPos("Kernel", "Settings")
-        self.dilate_iter = cv2.getTrackbarPos("Dilate", "Settings")
-        self.erode_iter = cv2.getTrackbarPos("Erode", "Settings")
-        self.min_cube_area = cv2.getTrackbarPos("Min Cube Area", "Settings")
         
-        if self.kernel_size % 2 == 0:
-            self.kernel_size += 1
-            cv2.setTrackbarPos("Kernel", "Settings", self.kernel_size)
+        self._callbacks = []
+        self._tracking = False
+        self._tracking_thread = None
+        self._cap = None
+        self._stop_event = threading.Event()
 
-    def create_blank_roi(self):
-        blank = np.zeros((ROI_WINDOW_HEIGHT, ROI_WINDOW_WIDTH, 3), dtype=np.uint8)
-        cv2.putText(blank, "NO SIGNAL", (120, 140), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-        cv2.putText(blank, "Adjust threshold", (100, 170), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 1)
-        return blank
+    def cube_callback(self, func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            return func(*args, **kwargs)
+        self._callbacks.append(func)
+        return wrapper
 
-    def draw_coordinates(self, image):
-        if image is None or image.size == 0:
-            return self.create_blank_roi()
-        h, w = image.shape[:2]
-        if h == 0 or w == 0:
-            return self.create_blank_roi()
+    def _notify_callbacks(self, cube_data):
+        for callback in self._callbacks:
+            try:
+                callback(cube_data)
+            except Exception as e:
+                print(f"Error in callback {callback.__name__}: {e}")
 
-        cx, cy = w // 2, h // 2
-        color = (0, 255, 0)
-        
-        cv2.line(image, (cx, 0), (cx, h), color, 1)
-        cv2.line(image, (0, cy), (w, cy), color, 1)
-        
-        cv2.putText(image, "Y:-50", (5, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
-        cv2.putText(image, "Y:+50", (5, h - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
-        cv2.putText(image, "X:-35", (5, cy - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
-        cv2.putText(image, "X:+35", (w - 50, cy - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
-        cv2.putText(image, "(0,0)", (cx + 5, cy - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 0), 1)
-        
-        return image
+    def _tracking_loop(self, camera_source, show_windows):
+        self._cap = cv2.VideoCapture(camera_source)
+        if not self._cap.isOpened():
+            print("Ошибка камеры")
+            self._tracking = False
+            return
 
-    def scale_to_roi_window(self, image):
-        if image is None or image.size == 0:
-            return self.create_blank_roi()
-        h, w = image.shape[:2]
-        if h == 0 or w == 0:
-            return self.create_blank_roi()
-        
-        scale = min(ROI_WINDOW_WIDTH / w, ROI_WINDOW_HEIGHT / h)
-        new_w = int(w * scale)
-        new_h = int(h * scale)
-        
-        resized = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
-        
-        scaled = np.zeros((ROI_WINDOW_HEIGHT, ROI_WINDOW_WIDTH, 3), dtype=np.uint8)
-        offset_x = (ROI_WINDOW_WIDTH - new_w) // 2
-        offset_y = (ROI_WINDOW_HEIGHT - new_h) // 2
-        
-        scaled[offset_y:offset_y+new_h, offset_x:offset_x+new_w] = resized
-        return scaled
+        if show_windows:
+            cv2.namedWindow("Settings")
+            cv2.createTrackbar("Threshold", "Settings", self.threshold, 255, lambda x: None)
+            cv2.createTrackbar("Kernel", "Settings", self.kernel_size, 21, lambda x: None)
+            cv2.namedWindow("1. Main Camera")
+            cv2.namedWindow("2. ROI with Cubes")
+            cv2.namedWindow("3. Binary Debug")
 
-    def process_frame(self, frame):
-        self.get_settings()
+        while not self._stop_event.is_set():
+            ret, frame = self._cap.read()
+            if not ret:
+                break
+            
+            display, roi_view, binary_view = self._process_frame(frame, show_windows)
+            
+            if show_windows:
+                self.threshold = cv2.getTrackbarPos("Threshold", "Settings")
+                self.kernel_size = cv2.getTrackbarPos("Kernel", "Settings")
+                if self.kernel_size % 2 == 0:
+                    self.kernel_size += 1
+                    cv2.setTrackbarPos("Kernel", "Settings", self.kernel_size)
+                
+                cv2.imshow("1. Main Camera", display)
+                cv2.imshow("2. ROI with Cubes", roi_view)
+                cv2.imshow("3. Binary Debug", binary_view)
+                
+                key = cv2.waitKey(1) & 0xFF
+                if key == ord('q'):
+                    break
+
+        self._cap.release()
+        if show_windows:
+            cv2.destroyAllWindows()
+        self._tracking = False
+
+    def _process_frame(self, frame, show_windows):
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        
         _, thresh = cv2.threshold(gray, self.threshold, 255, cv2.THRESH_BINARY_INV)
         kernel = np.ones((self.kernel_size, self.kernel_size), np.uint8)
         morph = cv2.dilate(thresh, kernel, iterations=self.dilate_iter)
@@ -148,8 +127,9 @@ class ConveyorTracker:
         if belt_contour is not None:
             x, y, w, h = cv2.boundingRect(belt_contour)
             
-            cv2.drawContours(display, [belt_contour], -1, (0, 255, 0), 2)
-            cv2.rectangle(display, (x, y), (x + w, y + h), (255, 0, 0), 2)
+            if show_windows:
+                cv2.drawContours(display, [belt_contour], -1, (0, 255, 0), 2)
+                cv2.rectangle(display, (x, y), (x + w, y + h), (255, 0, 0), 2)
             
             if h > 0:
                 self.ppm = h / BELT_WIDTH_MM
@@ -172,12 +152,12 @@ class ConveyorTracker:
                 if roi_x2 > roi_x and roi_y2 > roi_y:
                     roi_raw = frame[roi_y:roi_y2, roi_x:roi_x2].copy()
                     roi_coords = (roi_x, roi_y, roi_x2 - roi_x, roi_y2 - roi_y)
-                    cv2.rectangle(display, (roi_x, roi_y), (roi_x2, roi_y2), (0, 255, 255), 2)
+                    if show_windows:
+                        cv2.rectangle(display, (roi_x, roi_y), (roi_x2, roi_y2), (0, 255, 255), 2)
         
         detected_cubes = []
         if roi_raw is not None and roi_coords is not None:
             hsv_roi = cv2.cvtColor(roi_raw, cv2.COLOR_BGR2HSV)
-            
             combined_mask = np.zeros(roi_raw.shape[:2], dtype=np.uint8)
             cube_masks = {}
             
@@ -188,7 +168,6 @@ class ConveyorTracker:
                     u_arr = np.array(upper, dtype=np.uint8)
                     mask = cv2.inRange(hsv_roi, l_arr, u_arr)
                     color_mask = cv2.bitwise_or(color_mask, mask)
-                
                 color_mask = cv2.morphologyEx(color_mask, cv2.MORPH_CLOSE, np.ones((5,5), np.uint8))
                 cube_masks[color_name] = color_mask
                 combined_mask = cv2.bitwise_or(combined_mask, color_mask)
@@ -230,19 +209,28 @@ class ConveyorTracker:
                             'x_mm': x_mm,
                             'y_mm': y_mm,
                             'global_pos': (global_x, global_y),
-                            'area': area,
-                            'contour': cnt
+                            'area': area
                         })
                         
-                        cv2.rectangle(roi_raw, (x, y), (x + w, y + h), (0, 255, 255), 2)
-                        cv2.putText(roi_raw, f"{color}", (x, y - 5), 
-                                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
-                        cv2.putText(roi_raw, f"({x_mm:+.1f}, {y_mm:+.1f})", (x, y + h + 15), 
-                                   cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 0), 1)
-            
-            roi_raw = self.draw_coordinates(roi_raw)
-       
-        roi_view = self.scale_to_roi_window(roi_raw)
+                        if show_windows:
+                            cv2.rectangle(roi_raw, (x, y), (x + w, y + h), (0, 255, 255), 2)
+                            cv2.putText(roi_raw, f"{color}", (x, y - 5), 
+                                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+                            cv2.putText(roi_raw, f"({x_mm:+.1f}, {y_mm:+.1f})", (x, y + h + 15), 
+                                       cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 0), 1)
+
+            if show_windows and roi_raw is not None:
+                h, w = roi_raw.shape[:2]
+                cx, cy = w // 2, h // 2
+                cv2.line(roi_raw, (cx, 0), (cx, h), (0, 255, 0), 1)
+                cv2.line(roi_raw, (0, cy), (w, cy), (0, 255, 0), 1)
+                cv2.putText(roi_raw, "(0,0)", (cx + 5, cy - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 0), 1)
+
+        if roi_raw is not None:
+            roi_view = cv2.resize(roi_raw, (ROI_WINDOW_WIDTH, ROI_WINDOW_HEIGHT), interpolation=cv2.INTER_LINEAR)
+        else:
+            roi_view = np.zeros((ROI_WINDOW_HEIGHT, ROI_WINDOW_WIDTH, 3), dtype=np.uint8)
+            cv2.putText(roi_view, "NO ROI", (150, 150), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
         
         current_time = time.time()
         reported_cubes = []
@@ -255,7 +243,6 @@ class ConveyorTracker:
                 if dist < 30:
                     tracked.timestamp = current_time
                     tracked.global_pos = cube['global_pos']
-                    
                     if not tracked.reported:
                         tracked.reported = True
                         reported_cubes.append(tracked)
@@ -287,48 +274,37 @@ class ConveyorTracker:
                 'area': cube.area,
                 'global_pos': cube.global_pos
             }
-            
-            if self.cube_callback is not None:
-                self.cube_callback(cube_data)
-            
-            print(f"[CUBE DETECTED] Color: {cube.color:6s}")
-        
-        cv2.putText(display, f"Cubes in ROI: {len(detected_cubes)}", (10, 90), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-        cv2.putText(display, f"Tracked: {len(self.active_cubes)}", (10, 120), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-        
+            self._notify_callbacks(cube_data)
+
+        if show_windows:
+            cv2.putText(display, f"Cubes in ROI: {len(detected_cubes)}", (10, 30), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+            cv2.putText(display, f"Tracked: {len(self.active_cubes)}", (10, 60), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+            cv2.putText(display, f"PPM: {self.ppm:.2f}", (10, 90), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 1)
+
         return display, roi_view, thresh_color
 
-    def run(self):
-        cap = cv2.VideoCapture(0)
-        if not cap.isOpened():
-            print("Ошибка камеры")
+    def start(self, camera_source=0, show_windows=True):
+        if self._tracking:
             return
+        self._tracking = True
+        self._stop_event.clear()
+        self._tracking_thread = threading.Thread(target=self._tracking_loop, args=(camera_source, show_windows))
+        self._tracking_thread.daemon = True
+        self._tracking_thread.start()
 
-        self.create_windows()
+    def stop(self):
+        if not self._tracking:
+            return
+        self._stop_event.set()
+        if self._tracking_thread:
+            self._tracking_thread.join(timeout=2.0)
+        self._tracking = False
 
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
-            
-            main_view, roi_view, binary_view = self.process_frame(frame)
-            
-            if main_view is not None and main_view.size > 0:
-                cv2.imshow("1. Main Camera", main_view)
-            if roi_view is not None and roi_view.size > 0:
-                cv2.imshow("2. ROI with Cubes", roi_view)
-            if binary_view is not None and binary_view.size > 0:
-                cv2.imshow("3. Binary Debug", binary_view)
-            
-            key = cv2.waitKey(1) & 0xFF
-            if key == ord('q'):
-                break
+    def is_running(self):
+        return self._tracking
 
-        cap.release()
-        cv2.destroyAllWindows()
-
-if __name__ == "__main__":
-    tracker = ConveyorTracker(cube_callback=on_cube_detected)
-    tracker.run()
+# псевдо-singlethon
+tracker = ConveyorTracker()
