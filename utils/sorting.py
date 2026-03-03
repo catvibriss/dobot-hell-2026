@@ -149,23 +149,22 @@ def place_from_base(base_index: int):
     2, 3]
     """
     worker = state.BASE_DOBOT
-    print(state)
-    print(state.BASE_DOBOT)
-    print(type(state.BASE_DOBOT))
-
     row = (base_index)//4
     column = (base_index)%4
     cube_x = BASE_FPos[0] + BASE_X_OFFSET * column
     cube_y = BASE_FPos[1] - BASE_Y_OFFSET * row
-    worker.move(x=cube_x, y=cube_y, z=BASE_Z_PLACE+2)
+    print(cube_x, cube_y, BASE_Z_PLACE)
+
+    worker.move(x=cube_x, y=cube_y)# , z=BASE_Z_PLACE+2)
     worker.set_suction_cup(True)
-    worker.move(relative=True, z=-3)
-    worker.move(z=25)
-    worker.move(x=CONV_BASE_3DPOS[0], y=CONV_BASE_3DPOS[1], z=CONV_BASE_3DPOS[2])
+    worker.move(z=BASE_Z_PLACE)
+    worker.move(z=CONV_BASE_3DPOS[2]+5)
+    worker.move(x=CONV_BASE_3DPOS[0], y=CONV_BASE_3DPOS[1]) #, z=CONV_BASE_3DPOS[2])
     worker.set_suction_cup(False)
     worker.move(relative=True, z=5)
 
-def start_sorting(cubes: int = 16, randomize: bool = False):
+def start_sorting(cubes: int = 16, randomize: bool = True):
+    state.CONV.start_work()
     cubes = min(max(1, cubes), 16)
     indexes = list(range(cubes))
     if randomize:
@@ -173,5 +172,5 @@ def start_sorting(cubes: int = 16, randomize: bool = False):
 
     for idx in indexes:
         place_from_base(idx)
-        time.sleep(2)
+        # time.sleep(2)
 

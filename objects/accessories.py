@@ -12,7 +12,7 @@ class Conveyor:
             return
         
         self.owner = owner 
-        self.api = self.owner.api
+        print(type(self.owner))
         self.m_index = m_index
 
         self._last_freq = 0
@@ -22,10 +22,12 @@ class Conveyor:
         self.owner._log(f"[CV] {text}")
 
     def start_work(self):
-        self.set_freq(freq=-CONV_WORK_FREQ, smooth=True)
+        self._log("start work")
+        self.set_freq(freq=-CONV_WORK_FREQ, smooth=False)
 
     def disable(self):
-        dType.SetEMotor(self.api, self.m_index, 0, 0, 0)
+        self._log("disabled")
+        dType.SetEMotor(self.owner.api, self.m_index, 0, 0, 0)
 
     def set_freq(self, freq: int, smooth: bool = False):
         """
@@ -36,7 +38,8 @@ class Conveyor:
             freq = CONV_POSSIBLE_MAX_FREQ * sign(freq)
             
         if not smooth:
-            dType.SetEMotor(self.api, self.m_index, 1, freq, 0)
+            print("bebebe")
+            dType.SetEMotor(self.owner.api, self.m_index, 1, freq, 0)
 
         self._last_freq = freq
 
