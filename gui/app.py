@@ -2,6 +2,8 @@ from tkinter import PhotoImage
 import customtkinter as ctk
 from PIL import Image
 from utils import sorting
+import state
+import asyncio
 
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
@@ -141,6 +143,27 @@ class DobotApp(ctk.CTk):
 
         start_button.pack()
         start_cubes.pack()
+
+        def disable_all_action():
+            state.BASE_DOBOT._stop_and_clear_queue()
+            state.BASE_DOBOT.set_suction_cup(False)
+            state.BASE_DOBOT.move(x=200, y=0, z=25)
+
+            state.CONV.disable()
+
+        emergency_stop = ctk.CTkButton(frame, command=disable_all_action, text="STOP🚨")
+        emergency_stop.pack()
+
+        def all_homing():
+            state.BASE_DOBOT.homing()
+            state.HELP_DOBOT.homing()
+            asyncio.run(state.SORT_DOBOT.homing())
+
+        homing_label = ctk.CTkLabel(frame, text="Вытащите DOBOT'ов из пазов перед калибровкой")
+        homing_button = ctk.CTkButton(frame, text="Homing", command=all_homing)
+        
+        homing_label.pack()
+        homing_button.pack()
 
         self.frames[frame_name] = frame
         self.sidebar_pages.append((frame_name, "main"))

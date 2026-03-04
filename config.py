@@ -41,8 +41,12 @@ BUFFER_OFFSET    = 30
 CONV_POSSIBLE_MAX_FREQ = 41000
 CONV_MAX_FREQ_JUMP = 15500
 CONV_WORK_FREQ = 5500
+CONV_WORK_SPEED = 100
 
 CONV_BASE_3DPOS = (183, 229, 14) # x, y, z
 CONV_HELP_3DPOS = (200, 0 , 12) # x, y, z
 
-CONV_IFS_SLEEP_TIME = 0.5
+ifs_to_help_dist = 75 #mm
+conv_speed = CONV_WORK_SPEED
+
+CONV_IFS_SLEEP_TIME = ifs_to_help_dist/conv_speed

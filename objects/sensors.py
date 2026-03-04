@@ -57,7 +57,7 @@ class ObstacleSensor:
         self._thread = None
         self._thread_is_running = False
 
-        self._start_loop()
+        # self._start_loop()
 
     def _log(self, text: str):
         self.owner._log(f"[OS] {text}")

@@ -1,5 +1,6 @@
 import asyncio
 from objects.dobots import DobotDLL, DobotBLE
+from objects.camera import tracker
 from config import *
 from dataclasses import dataclass, field
 import state
@@ -102,19 +103,37 @@ async def sorting_move(cube: Cube):
 
     await execute(pick, drop)
 
+SESSION_CUBES_TARGET = 0
+SESSION_CUBES_TOTAL = 0
+
 # when camera register new cube
 # @camera -> color, offset
-def new_cube(color: int, offset: float):
-    cube = Cube(color=color, conv_y_offset=offset)
+@tracker.cube_callback
+def new_cube(cube_data):
+    # cube = Cube(color=color, conv_y_offset=offset)
+    # sorting_queue.append(cube)
+    colors = {"red": 0, "green": 1, "blue": 2, "yellow": 3}
+    cube = Cube(color=colors[cube_data.get("color", "red").lower()], conv_y_offset=cube_data.get("y_mm", 0))
     sorting_queue.append(cube)
-
+    print(cube_data)
+    print(sorting_queue)
+    
 # when OS get obstacle 
 # @obstacle -> None
+# @state.OBSTACLE.on_obstacle
 async def sort_cube():
+    global SESSION_CUBES_TOTAL, SESSION_CUBES_TARGET
+    help_worker = state.HELP_DOBOT
+
+    if len(sorting_queue) == 0:
+        help_worker.move(z=CONV_HELP_3DPOS[2]+30, r=0)
+        help_worker.move(x=CONV_HELP_3DPOS[0], y=CONV_HELP_3DPOS[1]+current_cube.conv_y_offset)
+        help_worker.set_gripper("open")
+        help_worker.set_gripper("off")
+        return
+    
     current_cube = sorting_queue[0]
 
-    help_worker: DobotDLL = None#HELP_DOBOT
-    
     # готов поймать
     help_worker.move(z=CONV_HELP_3DPOS[2]+30, r=0)
     help_worker.move(x=CONV_HELP_3DPOS[0], y=CONV_HELP_3DPOS[1]+current_cube.conv_y_offset)
@@ -136,11 +155,23 @@ async def sort_cube():
     help_worker.set_gripper("off")
     
     # отодвинулся для сортировки
-    help_worker.move(relative=True, z=30, x=-45, y=-45)
+    # help_worker.move(relative=True, z=30, x=-45, y=-45)
 
     sorting_queue.pop(0)
+
+    SESSION_CUBES_TOTAL += 1
+    if SESSION_CUBES_TOTAL == SESSION_CUBES_TARGET:
+        SESSION_CUBES_TARGET = 0
+        SESSION_CUBES_TOTAL = 0
+        state.CONV.disable()
+
     # передал сортировке
     await sorting_move(current_cube)
+
+    help_worker.move(z=CONV_HELP_3DPOS[2]+30, r=0)
+    help_worker.move(x=CONV_HELP_3DPOS[0], y=CONV_HELP_3DPOS[1]+current_cube.conv_y_offset)
+    help_worker.set_gripper("open")
+    help_worker.set_gripper("off")
 
 def place_from_base(base_index: int):
     """
@@ -164,8 +195,12 @@ def place_from_base(base_index: int):
     worker.move(relative=True, z=5)
 
 def start_sorting(cubes: int = 16, randomize: bool = True):
+    global SESSION_CUBES_TARGET
     state.CONV.start_work()
+
     cubes = min(max(1, cubes), 16)
+    SESSION_CUBES_TOTAL = cubes
+
     indexes = list(range(cubes))
     if randomize:
         random.shuffle(indexes)
@@ -174,3 +209,4 @@ def start_sorting(cubes: int = 16, randomize: bool = True):
         place_from_base(idx)
         # time.sleep(2)
 
+    state.BASE_DOBOT.move(x=210, y=0)

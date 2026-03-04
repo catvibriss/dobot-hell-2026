@@ -6,16 +6,23 @@ from objects.sensors import *
 from gui.app import app
 import state
 
+import asyncio
+
 # CONV = Conveyor(BASE_DOBOT, 0)
 # COLOR_SENSOR = ColorSensor(BASE_DOBOT)
 # OBSTACLE_SENSOR = ObstacleSensor(HELP_DOBOT)
 
+async def sort_connect():
+    state.SORT_DOBOT = DobotBLE(SORT_DOBOT_BLE_MAC, "Sort", has_rail=True)
+    await state.SORT_DOBOT.connect()
+
 def main():
-    state.BASE_DOBOT = DobotDLL(BASE_DOBOT_COM, dobot_name="Base", dll_path="./dobot_dll/DobotDllBase.dll")
-    state.CONV = Conveyor(state.BASE_DOBOT, 0)
-    # state.HELP_DOBOT = BlankDobotDLL(HELP_DOBOT_COM, "Help")
-    # SORT_DOBOT = BlankDobotDLL(SORT_DOBOT_BLE_MAC, "Sort", has_rail=True)
-    
+    asyncio.run(sort_connect())
+    # state.BASE_DOBOT = DobotDLL(BASE_DOBOT_COM, dobot_name="Base", dll_path="./dobot_dll/DobotDllBase.dll")
+    # state.CONV = Conveyor(state.BASE_DOBOT, 0)
+    state.HELP_DOBOT = BlankDobotDLL(HELP_DOBOT_COM, "Help")
+    state.OBSTACLE = ObstacleSensor(state.HELP_DOBOT, 2, 1)
+    state.OBSTACLE._start_loop()
     app.mainloop()
 
 if __name__ == "__main__":
