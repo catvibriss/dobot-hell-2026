@@ -87,7 +87,7 @@ class DobotDLL(metaclass=MetaDobotDLL):
         return response
 
     def homing(self):
-        dType.SetHOMECmdEx(self.api)
+        dType.SetHOMECmd(self.api, 0, 0)
 
     def move(self, relative=False, jump=0, **kwargs):
         pose = dType.GetPose(self.api)

@@ -3,7 +3,6 @@ from objects.dobots import DobotDLL, BlankDobotDLL, DobotBLE
 from objects.accessories import *
 from objects.sensors import *
 
-from gui.app import app
 import state
 
 import asyncio
@@ -18,11 +17,13 @@ async def sort_connect():
 
 def main():
     asyncio.run(sort_connect())
-    # state.BASE_DOBOT = DobotDLL(BASE_DOBOT_COM, dobot_name="Base", dll_path="./dobot_dll/DobotDllBase.dll")
-    # state.CONV = Conveyor(state.BASE_DOBOT, 0)
-    state.HELP_DOBOT = BlankDobotDLL(HELP_DOBOT_COM, "Help")
+    state.BASE_DOBOT = DobotDLL(BASE_DOBOT_COM, dobot_name="Base", dll_path="./dobot_dll/DobotDllBase.dll")
+    state.CONV = Conveyor(state.BASE_DOBOT, 0)
+    state.HELP_DOBOT = DobotDLL(HELP_DOBOT_COM, dobot_name="Help", dll_path="./dobot_dll/DobotDllHelp.dll")
     state.OBSTACLE = ObstacleSensor(state.HELP_DOBOT, 2, 1)
     state.OBSTACLE._start_loop()
+
+    from gui.app import app
     app.mainloop()
 
 if __name__ == "__main__":

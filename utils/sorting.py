@@ -120,19 +120,21 @@ def new_cube(cube_data):
     
 # when OS get obstacle 
 # @obstacle -> None
-# @state.OBSTACLE.on_obstacle
+@state.OBSTACLE.on_obstacle
 async def sort_cube():
+    print("ALLAH PIDORAS")
     global SESSION_CUBES_TOTAL, SESSION_CUBES_TARGET
     help_worker = state.HELP_DOBOT
 
     if len(sorting_queue) == 0:
         help_worker.move(z=CONV_HELP_3DPOS[2]+30, r=0)
-        help_worker.move(x=CONV_HELP_3DPOS[0], y=CONV_HELP_3DPOS[1]+current_cube.conv_y_offset)
+        help_worker.move(x=CONV_HELP_3DPOS[0], y=CONV_HELP_3DPOS[1])
         help_worker.set_gripper("open")
         help_worker.set_gripper("off")
         return
     
-    current_cube = sorting_queue[0]
+    # current_cube = sorting_queue[0]
+    current_cube = Cube(color=0, conv_y_offset=0)
 
     # готов поймать
     help_worker.move(z=CONV_HELP_3DPOS[2]+30, r=0)

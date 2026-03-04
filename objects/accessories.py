@@ -24,7 +24,7 @@ class Conveyor:
     def start_work(self):
         self._log("start work")
         # self.set_freq(freq=-CONV_WORK_FREQ, smooth=False)
-        self.set_speed(CONV_WORK_SPEED, smooth=False)
+        self.set_speed(-CONV_WORK_SPEED, smooth=False)
 
     def disable(self):
         self._log("disabled")
